@@ -23,9 +23,14 @@ def test_admin_jwt_can_access_admin_reads(
 
 def test_uploader_jwt_can_access_workspace_reads_and_analysis(
     client: TestClient,
+    db_session,
     demo_episode: Episode,
     uploader_headers: dict[str, str],
 ) -> None:
+    uploader = db_session.query(UserAccount).filter(UserAccount.username == "uploader-user").one()
+    demo_episode.owner_user_id = uploader.id
+    db_session.commit()
+
     assert client.get("/api/dramas", headers=uploader_headers).status_code == 200
     assert client.get("/api/episodes", headers=uploader_headers).status_code == 200
 
@@ -37,6 +42,26 @@ def test_uploader_jwt_can_access_workspace_reads_and_analysis(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "subtitle is required"
+
+
+def test_uploader_only_sees_owned_content(
+    client: TestClient,
+    demo_episode: Episode,
+    uploader_headers: dict[str, str],
+) -> None:
+    dramas_response = client.get("/api/dramas", headers=uploader_headers)
+    episodes_response = client.get("/api/episodes", headers=uploader_headers)
+    analyze_response = client.post(
+        f"/api/episodes/{demo_episode.id}/analyze",
+        headers=uploader_headers,
+        json={"force_reanalyze": False},
+    )
+
+    assert dramas_response.status_code == 200
+    assert episodes_response.status_code == 200
+    assert dramas_response.json()["data"] == []
+    assert episodes_response.json()["data"] == []
+    assert analyze_response.status_code == 403
 
 
 def test_auth_response_matches_frontend_contract(client: TestClient, db_session) -> None:

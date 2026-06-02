@@ -15,6 +15,7 @@ ON CONFLICT(id) DO UPDATE SET
 INSERT INTO episode (
   id,
   drama_id,
+  owner_user_id,
   episode_no,
   title,
   video_url,
@@ -27,6 +28,7 @@ VALUES
 (
   1,
   1,
+  NULL,
   1,
   '第 1 集 真相浮出水面',
   'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
@@ -45,15 +47,16 @@ VALUES
   30,
   'pending'
 ),
-(4, 2, 1, 'E001', 'D:\byte\upload\videos\E001.mp4', '', '', 186.50, 'pending'),
-(5, 2, 2, 'E002', 'D:\byte\upload\videos\E002.mp4', '', '', 196.25, 'pending'),
-(6, 2, 3, 'E003', 'D:\byte\upload\videos\E003.mp4', '', '', 135.62, 'pending'),
-(7, 2, 4, 'E004', 'D:\byte\upload\videos\E004.mp4', '', '', 123.78, 'pending'),
-(8, 2, 5, 'E005', 'D:\byte\upload\videos\E005.mp4', '', '', 156.10, 'pending'),
-(9, 2, 6, 'E006', 'D:\byte\upload\videos\E006.mp4', '', '', 128.73, 'pending'),
-(3, 2, 7, 'E007', 'D:\byte\upload\videos\E007.mp4', '', '', 121.00, 'pending')
+(4, 2, NULL, 1, 'E001', 'D:\byte\upload\videos\E001.mp4', '', '', 186.50, 'pending'),
+(5, 2, NULL, 2, 'E002', 'D:\byte\upload\videos\E002.mp4', '', '', 196.25, 'pending'),
+(6, 2, NULL, 3, 'E003', 'D:\byte\upload\videos\E003.mp4', '', '', 135.62, 'pending'),
+(7, 2, NULL, 4, 'E004', 'D:\byte\upload\videos\E004.mp4', '', '', 123.78, 'pending'),
+(8, 2, NULL, 5, 'E005', 'D:\byte\upload\videos\E005.mp4', '', '', 156.10, 'pending'),
+(9, 2, NULL, 6, 'E006', 'D:\byte\upload\videos\E006.mp4', '', '', 128.73, 'pending'),
+(3, 2, NULL, 7, 'E007', 'D:\byte\upload\videos\E007.mp4', '', '', 121.00, 'pending')
 ON CONFLICT(id) DO UPDATE SET
   drama_id = excluded.drama_id,
+  owner_user_id = excluded.owner_user_id,
   episode_no = excluded.episode_no,
   title = excluded.title,
   video_url = excluded.video_url,

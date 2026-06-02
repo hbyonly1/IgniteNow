@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from backend.app.models import Job
+from backend.app.models import Drama, Episode, Job, UserAccount
 from backend.app.routers import system
 
 
@@ -44,8 +44,19 @@ def test_create_ai_analyze_job_records_status(
     assert data["rq_job_id"] == "rq-test"
 
 
-def test_uploader_can_read_jobs(client, db_session: Session, uploader_headers):
-    db_session.add(Job(type="ai_analyze", status="success", progress=100, payload_json="{}"))
+def test_uploader_can_read_own_jobs(client, db_session: Session, uploader_headers):
+    uploader = db_session.query(UserAccount).filter(UserAccount.username == "uploader-user").one()
+    drama = Drama(title="Owned Drama")
+    episode = Episode(
+        drama=drama,
+        owner_user_id=uploader.id,
+        episode_no=1,
+        title="E001",
+        video_url="https://example.com/video.mp4",
+    )
+    db_session.add_all([drama, episode])
+    db_session.flush()
+    db_session.add(Job(type="ai_analyze", status="success", progress=100, payload_json=f'{{"episode_id": {episode.id}}}'))
     db_session.commit()
 
     response = client.get("/api/system/jobs", headers=uploader_headers)

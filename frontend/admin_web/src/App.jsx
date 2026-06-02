@@ -5,9 +5,9 @@ import LoginPage from './pages/LoginPage.jsx';
 import AnalyzePage from './pages/workspace/AnalyzePage.jsx';
 import DashboardPage from './pages/workspace/DashboardPage.jsx';
 import DramasPage from './pages/workspace/DramasPage.jsx';
-import EpisodesPage from './pages/workspace/EpisodesPage.jsx';
 import HighlightsPage from './pages/workspace/HighlightsPage.jsx';
 import JobsPage from './pages/workspace/JobsPage.jsx';
+import SettingsPage from './pages/workspace/SettingsPage.jsx';
 import { getAdminUserRole, hasAdminAccessToken } from './auth.js';
 import {
   canAccessWorkspaceModule,
@@ -63,14 +63,6 @@ function App() {
           }
         />
         <Route
-          path="episodes"
-          element={
-            <RequireWorkspaceRole moduleId="episodes">
-              <EpisodesPage />
-            </RequireWorkspaceRole>
-          }
-        />
-        <Route
           path="analyze"
           element={
             <RequireWorkspaceRole moduleId="analyze">
@@ -79,7 +71,23 @@ function App() {
           }
         />
         <Route
+          path="analyze/jobs/:jobId"
+          element={
+            <RequireWorkspaceRole moduleId="analyze">
+              <AnalyzePage />
+            </RequireWorkspaceRole>
+          }
+        />
+        <Route
           path="highlights"
+          element={
+            <RequireWorkspaceRole moduleId="highlights">
+              <HighlightsPage />
+            </RequireWorkspaceRole>
+          }
+        />
+        <Route
+          path="highlights/dramas/:dramaId"
           element={
             <RequireWorkspaceRole moduleId="highlights">
               <HighlightsPage />
@@ -99,6 +107,14 @@ function App() {
           element={
             <RequireWorkspaceRole moduleId="dashboard">
               <DashboardPage />
+            </RequireWorkspaceRole>
+          }
+        />
+        <Route
+          path="settings"
+          element={
+            <RequireWorkspaceRole moduleId="settings">
+              <SettingsPage />
             </RequireWorkspaceRole>
           }
         />

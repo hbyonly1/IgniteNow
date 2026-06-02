@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -7,8 +9,10 @@ from ..schemas import (
     AnalyzeRequest,
     DramaCreate,
     DramaOut,
+    DramaUpdate,
     EpisodeCreate,
     EpisodeOut,
+    EpisodeUpdate,
     HighlightBulkStatusUpdate,
     HighlightCreate,
     HighlightOut,
@@ -27,13 +31,77 @@ router = APIRouter()
 require_workspace_user = require_roles(ADMIN_ROLE, UPLOADER_ROLE)
 
 
-@router.get("/dramas", dependencies=[Depends(require_workspace_user)])
-def list_dramas(db: Session = Depends(get_db)):
-    return ok([DramaOut.model_validate(item).model_dump() for item in db.query(Drama).order_by(Drama.id.desc()).all()])
+def _can_access_episode(user, episode: Episode) -> bool:
+    return user.role == ADMIN_ROLE or episode.owner_user_id == user.id
 
 
-@router.post("/dramas", dependencies=[Depends(require_workspace_user)])
-def create_drama(payload: DramaCreate, db: Session = Depends(get_db)):
+def _visible_episode_query(db: Session, user):
+    query = db.query(Episode)
+    if user.role != ADMIN_ROLE:
+        query = query.filter(Episode.owner_user_id == user.id)
+    return query
+
+
+def _highlight_status_counts(db: Session, episode_ids: list[int]) -> dict[int, dict[str, int]]:
+    counts = {episode_id: {"draft": 0, "published": 0, "rejected": 0, "archived": 0} for episode_id in episode_ids}
+    if not episode_ids:
+        return counts
+    highlights = db.query(HighlightEvent).filter(HighlightEvent.episode_id.in_(episode_ids)).all()
+    for highlight in highlights:
+        if highlight.status in counts[highlight.episode_id]:
+            counts[highlight.episode_id][highlight.status] += 1
+    return counts
+
+
+def _episode_out(db: Session, episode: Episode) -> dict:
+    highlight_counts = _highlight_status_counts(db, [episode.id]).get(episode.id, {})
+    data = EpisodeOut.model_validate(episode).model_dump()
+    data.update(
+        {
+            "draft_highlight_count": highlight_counts.get("draft", 0),
+            "published_highlight_count": highlight_counts.get("published", 0),
+            "rejected_highlight_count": highlight_counts.get("rejected", 0),
+            "archived_highlight_count": highlight_counts.get("archived", 0),
+        }
+    )
+    return data
+
+
+@router.get("/dramas")
+def list_dramas(user=Depends(require_workspace_user), db: Session = Depends(get_db)):
+    if user.role == ADMIN_ROLE:
+        dramas = db.query(Drama).order_by(Drama.id.desc()).all()
+        visible_episodes = db.query(Episode).all()
+    else:
+        visible_episodes = _visible_episode_query(db, user).all()
+        drama_ids = sorted({episode.drama_id for episode in visible_episodes}, reverse=True)
+        dramas = db.query(Drama).filter(Drama.id.in_(drama_ids)).order_by(Drama.id.desc()).all() if drama_ids else []
+
+    episodes_by_drama: dict[int, list[Episode]] = {}
+    for episode in visible_episodes:
+        episodes_by_drama.setdefault(episode.drama_id, []).append(episode)
+    highlight_counts = _highlight_status_counts(db, [episode.id for episode in visible_episodes])
+
+    result = []
+    for drama in dramas:
+        episodes = episodes_by_drama.get(drama.id, [])
+        data = DramaOut.model_validate(drama).model_dump()
+        data.update(
+            {
+                "episode_count": len(episodes),
+                "pending_episode_count": sum(1 for item in episodes if item.analyze_status == "pending"),
+                "processing_episode_count": sum(1 for item in episodes if item.analyze_status == "processing"),
+                "failed_episode_count": sum(1 for item in episodes if item.analyze_status == "failed"),
+                "draft_highlight_count": sum(highlight_counts.get(item.id, {}).get("draft", 0) for item in episodes),
+                "published_highlight_count": sum(highlight_counts.get(item.id, {}).get("published", 0) for item in episodes),
+            }
+        )
+        result.append(data)
+    return ok(result)
+
+
+@router.post("/dramas")
+def create_drama(payload: DramaCreate, user=Depends(require_admin), db: Session = Depends(get_db)):
     drama = Drama(**payload.model_dump())
     db.add(drama)
     db.commit()
@@ -41,32 +109,81 @@ def create_drama(payload: DramaCreate, db: Session = Depends(get_db)):
     return ok(DramaOut.model_validate(drama).model_dump(), "drama created")
 
 
-@router.get("/episodes", dependencies=[Depends(require_workspace_user)])
-def list_episodes(drama_id: int | None = None, db: Session = Depends(get_db)):
-    query = db.query(Episode)
+@router.put("/dramas/{drama_id}")
+def update_drama(drama_id: int, payload: DramaUpdate, user=Depends(require_admin), db: Session = Depends(get_db)):
+    drama = db.get(Drama, drama_id)
+    if not drama:
+        raise HTTPException(status_code=404, detail="drama not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        if key == "status":
+            if value not in {"active", "archived"}:
+                raise HTTPException(status_code=400, detail="illegal status")
+            setattr(drama, key, value)
+        else:
+            setattr(drama, key, value or "")
+    db.commit()
+    db.refresh(drama)
+    return ok(DramaOut.model_validate(drama).model_dump(), "drama updated")
+
+
+@router.get("/episodes")
+def list_episodes(drama_id: Optional[int] = None, user=Depends(require_workspace_user), db: Session = Depends(get_db)):
+    query = _visible_episode_query(db, user)
     if drama_id:
         query = query.filter(Episode.drama_id == drama_id)
     episodes = query.order_by(Episode.id.desc()).all()
-    return ok([EpisodeOut.model_validate(item).model_dump() for item in episodes])
+    highlight_counts = _highlight_status_counts(db, [item.id for item in episodes])
+    result = []
+    for item in episodes:
+        data = EpisodeOut.model_validate(item).model_dump()
+        data.update(
+            {
+                "draft_highlight_count": highlight_counts.get(item.id, {}).get("draft", 0),
+                "published_highlight_count": highlight_counts.get(item.id, {}).get("published", 0),
+                "rejected_highlight_count": highlight_counts.get(item.id, {}).get("rejected", 0),
+                "archived_highlight_count": highlight_counts.get(item.id, {}).get("archived", 0),
+            }
+        )
+        result.append(data)
+    return ok(result)
 
 
-@router.post("/episodes", dependencies=[Depends(require_workspace_user)])
-def create_episode(payload: EpisodeCreate, db: Session = Depends(get_db)):
+@router.post("/episodes")
+def create_episode(payload: EpisodeCreate, user=Depends(require_workspace_user), db: Session = Depends(get_db)):
     if not db.get(Drama, payload.drama_id):
         raise HTTPException(status_code=404, detail="drama not found")
-    episode = Episode(**payload.model_dump())
+    episode = Episode(**payload.model_dump(), owner_user_id=user.id)
     db.add(episode)
     db.commit()
     db.refresh(episode)
-    return ok(EpisodeOut.model_validate(episode).model_dump(), "episode created")
+    return ok(_episode_out(db, episode), "episode created")
 
 
-@router.post("/episodes/{episode_id}/analyze", dependencies=[Depends(require_workspace_user)])
-def analyze_episode(episode_id: int, payload: AnalyzeRequest | None = None, db: Session = Depends(get_db)):
+@router.put("/episodes/{episode_id}")
+def update_episode(episode_id: int, payload: EpisodeUpdate, user=Depends(require_workspace_user), db: Session = Depends(get_db)):
+    episode = db.get(Episode, episode_id)
+    if not episode:
+        raise HTTPException(status_code=404, detail="episode not found")
+    if not _can_access_episode(user, episode):
+        raise HTTPException(status_code=403, detail="episode is not owned by current uploader")
+    updates = payload.model_dump(exclude_unset=True)
+    if "drama_id" in updates and not db.get(Drama, updates["drama_id"]):
+        raise HTTPException(status_code=404, detail="drama not found")
+    for key, value in updates.items():
+        setattr(episode, key, value)
+    db.commit()
+    db.refresh(episode)
+    return ok(_episode_out(db, episode), "episode updated")
+
+
+@router.post("/episodes/{episode_id}/analyze")
+def analyze_episode(episode_id: int, payload: Optional[AnalyzeRequest] = None, user=Depends(require_workspace_user), db: Session = Depends(get_db)):
     payload = payload or AnalyzeRequest()
     episode = db.get(Episode, episode_id)
     if not episode:
         raise HTTPException(status_code=404, detail="episode not found")
+    if not _can_access_episode(user, episode):
+        raise HTTPException(status_code=403, detail="episode is not owned by current uploader")
     if episode.analyze_status == "processing":
         raise HTTPException(status_code=409, detail="episode is already processing")
     if not (episode.subtitle_content or episode.subtitle_url):

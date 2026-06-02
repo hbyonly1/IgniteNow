@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -17,11 +18,24 @@ class DramaCreate(BaseModel):
     cover_url: str = ""
 
 
+class DramaUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    cover_url: Optional[str] = None
+    status: Optional[str] = None
+
+
 class DramaOut(DramaCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     status: str
+    episode_count: int = 0
+    pending_episode_count: int = 0
+    processing_episode_count: int = 0
+    failed_episode_count: int = 0
+    draft_highlight_count: int = 0
+    published_highlight_count: int = 0
 
 
 class EpisodeCreate(BaseModel):
@@ -34,12 +48,27 @@ class EpisodeCreate(BaseModel):
     duration: float = 0
 
 
+class EpisodeUpdate(BaseModel):
+    drama_id: Optional[int] = None
+    episode_no: Optional[int] = None
+    title: Optional[str] = None
+    video_url: Optional[str] = None
+    subtitle_url: Optional[str] = None
+    subtitle_content: Optional[str] = None
+    duration: Optional[float] = None
+
+
 class EpisodeOut(EpisodeCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    owner_user_id: Optional[int] = None
     analyze_status: str
     analyze_error: str = ""
+    draft_highlight_count: int = 0
+    published_highlight_count: int = 0
+    rejected_highlight_count: int = 0
+    archived_highlight_count: int = 0
 
 
 class AnalyzeRequest(BaseModel):
@@ -64,8 +93,8 @@ class JobOut(BaseModel):
     progress: float
     payload_json: str
     rq_job_id: str
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
     error: str
     created_at: datetime
     updated_at: datetime
@@ -122,17 +151,17 @@ class UploadEpisodeOut(BaseModel):
 
 
 class HighlightUpdate(BaseModel):
-    start_time: float | None = None
-    end_time: float | None = None
-    highlight_type: str | None = None
-    emotion: str | None = None
-    intensity: float | None = Field(default=None, ge=0, le=1)
-    confidence: float | None = Field(default=None, ge=0, le=1)
-    trigger_score: float | None = Field(default=None, ge=0, le=1)
-    reason: str | None = None
-    button_text: str | None = None
-    effect: str | None = None
-    status: str | None = None
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    highlight_type: Optional[str] = None
+    emotion: Optional[str] = None
+    intensity: Optional[float] = Field(default=None, ge=0, le=1)
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    trigger_score: Optional[float] = Field(default=None, ge=0, le=1)
+    reason: Optional[str] = None
+    button_text: Optional[str] = None
+    effect: Optional[str] = None
+    status: Optional[str] = None
 
 
 class HighlightCreate(BaseModel):
@@ -150,7 +179,7 @@ class HighlightCreate(BaseModel):
 
 
 class HighlightBulkStatusUpdate(BaseModel):
-    highlight_ids: list[int] | None = None
+    highlight_ids: Optional[list[int]] = None
     status: str
 
 

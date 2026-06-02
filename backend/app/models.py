@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,6 +35,7 @@ class Episode(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     drama_id: Mapped[int] = mapped_column(ForeignKey("drama.id"), nullable=False, index=True)
+    owner_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user_account.id"), nullable=True, index=True)
     episode_no: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     video_url: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -45,6 +47,7 @@ class Episode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     drama: Mapped[Drama] = relationship(back_populates="episodes")
+    owner: Mapped[Optional[UserAccount]] = relationship()
     highlights: Mapped[list["HighlightEvent"]] = relationship(back_populates="episode", cascade="all, delete-orphan")
 
 
@@ -109,8 +112,8 @@ class Job(Base):
     progress: Mapped[float] = mapped_column(Float, default=0)
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
     rq_job_id: Mapped[str] = mapped_column(String(160), default="", index=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

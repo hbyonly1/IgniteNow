@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from typing import Optional
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -12,7 +13,7 @@ def require_roles(*roles: str) -> Callable:
     allowed_roles = set(roles)
 
     def dependency(
-        credentials: HTTPAuthorizationCredentials | None = Depends(security),
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
         db: Session = Depends(get_db),
     ):
         if not credentials:
@@ -26,7 +27,7 @@ def require_roles(*roles: str) -> Callable:
 
 
 def require_admin(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db),
 ):
     if not credentials:

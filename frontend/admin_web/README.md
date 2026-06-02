@@ -1,6 +1,6 @@
 # IgniteNow Admin Web
 
-`frontend/admin_web/` 是 IgniteNow 的 Web 入口页和工作台前端模块。当前已完成 Vite + React + Ant Design 工程初始化、`/` 产品入口页、`/login` JWT 登录页和 `/workspace/*` 工作台骨架；多数业务页面仍是占位，后台任务页已开始接入真实 RQ 任务接口。
+`frontend/admin_web/` 是 IgniteNow 的 Web 入口页和工作台前端模块。当前已完成 Vite + React + Ant Design 工程初始化、`/` 产品入口页、`/login` JWT 登录页和 `/workspace/*` 工作台骨架；内容管理和后台任务页已接入真实接口。
 
 ## 当前已完成
 
@@ -21,15 +21,16 @@
   - `/login`：JWT 登录页，调用后端 `POST /api/auth/login`，根据 `role` 进入对应工作台页面。
   - `/workspace`：受前端访问守卫保护；无本地 access token 时会重定向到 `/login`，有 token 时按角色跳转默认页。
   - `/workspace/dashboard`：仪表盘空白页，仅 `admin` 可见；后续接入 analytics overview。
-  - `/workspace/dramas`：短剧管理空白页，仅 `admin` 可见。
-  - `/workspace/episodes`：剧集配置空白页，`admin` 和 `uploader` 可见。
-  - `/workspace/analyze`：AI 高光识别空白页，`admin` 和 `uploader` 可见。
-  - `/workspace/highlights`：高光审核发布空白页，仅 `admin` 可见。
+  - `/workspace/dramas`：内容管理页，`admin` 和 `uploader` 可见；以短剧缩略图网格组织剧集配置浮窗。
+  - `/workspace/analyze`：AI 生产页，`admin` 和 `uploader` 可见；管理剧集识别队列、批量识别和失败重跑。
+  - `/workspace/analyze/jobs/:jobId`：AI 任务详情页，展示任务状态、生成摘要和任务日志。
+  - `/workspace/highlights`：审核发布页，仅 `admin` 可见；按短剧组织审核队列。
+  - `/workspace/highlights/dramas/:dramaId`：短剧审核详情页，按剧集上下文编辑、发布、驳回高光。
   - `/workspace/jobs`：后台任务页，`admin` 和 `uploader` 可见，可提交 RQ AI 分析任务、查看任务日志和重试已结束任务。
 - 拆分前端模块边界：
   - `src/pages/LandingPage.jsx`：概览页组件。
   - `src/pages/WorkspaceLayout.jsx`：统一工作台布局组件。
-  - `src/pages/workspace/`：工作台各路由占位页面。
+  - `src/pages/workspace/`：工作台各业务页面。
   - `src/workspaceModules.jsx`：工作台导航、页面元信息和角色权限配置。
   - `src/auth.js`：当前前端访问守卫使用的本地 token 工具。
   - `src/services/apiClient.js`：统一 Axios 实例，自动携带 `Authorization: Bearer <access_token>`，遇到 `401/403` 时清理登录态并跳转 `/login`。
@@ -38,10 +39,9 @@
   - `src/styles/landing.css`：概览页样式和动效。
   - `src/styles/workspace.css`：后台工作台样式。
 - 在 `/workspace` 中加入当前工作台导航：
-  - 短剧管理
-  - 剧集配置
-  - AI 高光识别
-  - 高光审核
+  - 内容管理
+  - AI 生产
+  - 审核发布
   - 后台任务
   - 仪表盘
 - 调整 `/workspace` 侧边栏：
@@ -52,7 +52,7 @@
   - 左侧品牌区和右侧顶部栏统一为 65px 高度，并使用同色灰色底部分割线；侧栏收起时仍保留该分割线。
   - 侧栏菜单项和底部折叠按钮统一使用固定尺寸 SVG 图标、小圆角矩形按钮、同一套 hover 样式和一致的宽度/边距；侧栏收起后隐藏顶部标题，菜单项和底部折叠按钮都以 40px 图标按钮居中显示。
   - 去掉侧栏菜单项、折叠按钮、图标和 SVG 的浏览器默认焦点虚线框，避免图标旁出现黄色虚线框。
-  - 侧栏菜单按角色过滤：`admin` 可见全部页面，`uploader` 仅可见剧集配置和 AI 高光识别。
+  - 侧栏菜单按角色过滤：`admin` 可见全部页面，`uploader` 可见内容管理、AI 生产和后台任务。
 - 配置基础工程文件：
   - `package.json`
   - `package-lock.json`
@@ -188,7 +188,7 @@ npm run preview
 
 ## 已验证结果
 
-截至 2026-05-29，已完成以下验证：
+截至 2026-05-30，已完成以下验证：
 
 - `npm install` 成功。
 - `npm exec eslint .` 通过。
@@ -196,6 +196,9 @@ npm run preview
 - `/workspace` 已接入 React Router，并按角色自动跳转默认页面。
 - `src/services/apiClient.js` 会自动注入 `Authorization: Bearer <access_token>`。
 - `/workspace/jobs` 已接入 `POST /api/system/jobs`、任务列表、日志查看和失败任务重试。
+- `/workspace/dramas` 已升级为内容管理页，接入短剧缩略图网格、剧集 Drawer、新增/编辑剧集和 AI 任务提交。
+- `/workspace/analyze` 已升级为 AI 生产队列，接入剧集筛选、单集/批量识别和任务详情页。
+- `/workspace/highlights` 已升级为按短剧组织的审核发布工作台。
 
 当前构建产物中 JS 约 836 kB，Vite 会提示 chunk 超过 500 kB。该提示主要来自当前单包构建与 Ant Design 依赖体积，不影响本地运行；等页面和路由变多后，可通过动态 import、路由级拆分或 manual chunks 优化。
 
@@ -206,18 +209,17 @@ npm run preview
 | ID | 内容 | 当前状态 |
 |---|---|---|
 | `P0-WEB-02` | API client 封装，统一 Axios service，并自动携带 Bearer JWT | 已完成 |
-| `P0-WEB-03` | 短剧列表/创建页 | 未完成 |
-| `P0-WEB-04` | 剧集列表/创建页，支持视频 URL、字幕 URL/字幕内容 | 未完成 |
-| `P0-WEB-05` | AI 分析触发按钮 | 部分完成：后台任务页可提交 AI 分析任务，独立分析页仍未接业务 UI |
-| `P0-WEB-06` | 高光审核页，支持查看、编辑、发布、驳回 | 未完成 |
+| `P0-WEB-03` | 短剧列表/创建页 | 已完成：合并到内容管理 |
+| `P0-WEB-04` | 剧集列表/创建页，支持视频 URL、字幕 URL/字幕内容 | 已完成：短剧 Drawer 内配置 |
+| `P0-WEB-05` | AI 分析触发按钮 | 已完成：内容管理、AI 生产和后台任务页可提交 AI 分析任务 |
+| `P0-WEB-06` | 高光审核页，支持查看、编辑、发布、驳回 | 已完成：按短剧/剧集组织审核发布 |
 | `P0-WEB-07` | 仪表盘页，展示 overview 指标 | 未完成 |
 
 ## 尚未完成
 
-- 已接入后端 JWT 登录 API，但短剧、剧集、高光审核和仪表盘页面仍未接入真实数据 API。
+- 已接入后端 JWT 登录 API；内容管理、AI 生产、审核发布和后台任务已接入真实数据 API，仪表盘仍需继续完善。
 - 已实现统一 Axios client，并自动注入 `Authorization: Bearer <access_token>`。
-- 当前 `/workspace` 只是工作台骨架，不具备真实创建、编辑、发布或查询能力。
-- 已引入 `react-router-dom`；除 `/workspace/jobs` 外，当前 `/workspace/*` 页面内容区留空，仅保留工作台框架、侧边导航和顶部标题描述。
+- 已引入 `react-router-dom`；内容管理、AI 生产、审核发布和后台任务具备真实业务操作，其余页面仍保留工作台框架。
 - 尚未实现错误提示、加载态、空状态、表单校验和接口异常处理。
 - 尚未实现端到端验收链路。
 - 概览页已完成当前阶段视觉打磨，后续若继续调整，应优先保持 `LandingPage.jsx` 与 `landing.css` 内聚，避免影响 `/workspace` 工作台样式。

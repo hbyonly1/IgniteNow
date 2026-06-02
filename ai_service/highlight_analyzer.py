@@ -1,3 +1,5 @@
+from typing import Optional
+
 from .llm_client import LLMNotConfigured, analyze_with_llm, is_llm_configured
 from .subtitle_parser import SubtitleCue, parse_subtitle_text
 
@@ -78,7 +80,7 @@ def _analyze_with_rules(cues: list[SubtitleCue]) -> dict:
     return {"highlights": highlights[:8], "provider": "fallback_rules"}
 
 
-def analyze_subtitle_text(content: str, prefer_llm: bool | None = None) -> dict:
+def analyze_subtitle_text(content: str, prefer_llm: Optional[bool] = None) -> dict:
     cues = parse_subtitle_text(content)
     should_use_llm = is_llm_configured() if prefer_llm is None else prefer_llm
     if should_use_llm:

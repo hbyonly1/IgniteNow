@@ -207,6 +207,7 @@
 
 .workspace-main {
   min-width: 0;
+  overflow-x: hidden;
   background: #f3f0ee;
 }
 
@@ -216,7 +217,7 @@
   justify-content: space-between;
   height: 65px;
   padding: 0 32px;
-  background: rgba(243, 240, 238, 0.92);
+  background: #fcfbfa;
   border-bottom: 1px solid rgba(20, 20, 19, 0.1);
   backdrop-filter: blur(16px);
 }
@@ -228,7 +229,7 @@
 
 .workspace-header h4 {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 500;
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -255,7 +256,8 @@
 .workspace-content {
   display: grid;
   gap: 20px;
-  padding: 24px 32px 40px;
+  min-width: 0;
+  padding: 15px 15px 15px;
 }
 
 .workspace-grid {
@@ -285,7 +287,13 @@
 }
 
 .workspace-table-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(100vh - 125px);
   padding: 20px;
+  overflow: hidden;
   background: #fcfbfa;
   border: 1px solid rgba(20, 20, 19, 0.08);
   border-radius: 24px;
@@ -312,10 +320,20 @@
 }
 
 .job-create-form {
+  display: flex;
+  align-items: center;
   gap: 12px;
   margin-bottom: 18px;
   padding-bottom: 18px;
   border-bottom: 1px solid rgba(20, 20, 19, 0.08);
+}
+
+.job-create-form .ant-form-item {
+  margin-inline-end: 0;
+}
+
+.job-refresh-action {
+  margin-left: auto;
 }
 
 .job-log-line {
@@ -352,14 +370,845 @@
   background: transparent;
 }
 
+.workspace-table-panel .ant-table-wrapper {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(100vh - 250px);
+  max-width: 100%;
+}
+
+.workspace-table-panel .ant-spin-nested-loading,
+.workspace-table-panel .ant-spin,
+.workspace-table-panel .ant-spin-container,
+.workspace-table-panel .ant-table,
+.workspace-table-panel .ant-table-container,
+.workspace-table-panel .ant-table-content,
+.workspace-table-panel .ant-table-placeholder,
+.workspace-table-panel .ant-empty,
+.workspace-table-panel table {
+  width: 100%;
+}
+
+.workspace-table-panel .ant-spin-nested-loading,
+.workspace-table-panel .ant-spin,
+.workspace-table-panel .ant-spin-container,
+.workspace-table-panel .ant-table,
+.workspace-table-panel .ant-table-container,
+.workspace-table-panel .ant-table-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.workspace-table-panel .ant-spin-nested-loading,
+.workspace-table-panel .ant-spin,
+.workspace-table-panel .ant-spin-container {
+  min-height: calc(100vh - 250px);
+}
+
+.workspace-table-panel .ant-table-content > table {
+  flex: 1;
+  height: 100%;
+}
+
+.workspace-table-panel .ant-table-placeholder > td,
+.workspace-table-panel .ant-table-placeholder .ant-table-cell,
+.workspace-table-panel .ant-empty {
+  height: 100%;
+}
+
 .workspace-table-panel .ant-table-thead > tr > th {
   color: #696969;
   font-weight: 600;
   background: #f3f0ee;
 }
 
+.content-management {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.content-overview {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(420px, 1.55fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.content-overview-primary,
+.content-overview-focus {
+  min-width: 0;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+}
+
+.content-overview-primary {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 22px;
+}
+
+.content-overview-primary > span,
+.content-focus-main > span,
+.content-focus-item span {
+  color: #696969;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.content-overview-primary > strong {
+  font-size: 36px;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.content-overview-primary p,
+.content-focus-main p {
+  margin: 0;
+  color: #565656;
+  line-height: 1.45;
+}
+
+.content-overview-primary p {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.content-overview-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.content-overview-focus {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1.4fr);
+  overflow: hidden;
+}
+
+.content-focus-main {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: #f3f0ee;
+  background: #141413;
+}
+
+.content-focus-main > span,
+.content-focus-main p {
+  color: rgba(243, 240, 238, 0.76);
+}
+
+.content-focus-main > strong {
+  font-size: 64px;
+  font-weight: 500;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+}
+
+.content-focus-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: rgba(20, 20, 19, 0.08);
+}
+
+.content-focus-item {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  min-height: 164px;
+  padding: 22px;
+  background: #fcfbfa;
+}
+
+.content-focus-item strong {
+  font-size: 38px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.content-focus-item.warning strong {
+  color: #9a3a0a;
+}
+
+.content-focus-item.danger strong {
+  color: #cf4500;
+}
+
+.content-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 18px;
+}
+
+.content-search {
+  max-width: 380px;
+}
+
+.content-filter {
+  width: 150px;
+}
+
+.drama-card-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.drama-card {
+  min-width: 0;
+  overflow: hidden;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.drama-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(20, 20, 19, 0.18);
+  box-shadow: 0 18px 42px rgba(20, 20, 19, 0.08);
+}
+
+.drama-cover {
+  position: relative;
+  display: grid;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  place-items: center;
+  color: #f3f0ee;
+  background: #141413;
+}
+
+.drama-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.drama-cover > span {
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.drama-risk {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  margin: 0;
+}
+
+.drama-card-body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.drama-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.drama-card-title-row h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drama-card-body p {
+  display: -webkit-box;
+  min-height: 40px;
+  margin: 0;
+  overflow: hidden;
+  color: #696969;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.drama-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.drama-stats span {
+  padding: 5px 10px;
+  color: #565656;
+  font-size: 12px;
+  background: #f3f0ee;
+  border-radius: 999px;
+}
+
+.content-empty {
+  display: grid;
+  min-height: 360px;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+  place-items: center;
+}
+
+.drawer-drama-summary {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 16px;
+  background: #f8f6f4;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 16px;
+}
+
+.drawer-drama-summary p {
+  margin: 0;
+  color: #565656;
+  line-height: 1.5;
+}
+
+.episode-form {
+  display: grid;
+  gap: 16px;
+}
+
+.episode-form-grid {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 140px;
+  gap: 12px;
+}
+
+.episode-form-grid .ant-form-item {
+  margin-bottom: 0;
+}
+
+.episode-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.ai-production-page,
+.review-page,
+.job-detail-page,
+.review-detail-page {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.workflow-overview {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.4fr);
+  gap: 16px;
+}
+
+.workflow-hero,
+.workflow-metrics {
+  min-width: 0;
+  overflow: hidden;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+}
+
+.workflow-hero {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-height: 150px;
+  padding: 24px;
+  color: #f3f0ee;
+  background: #141413;
+}
+
+.workflow-hero span {
+  color: rgba(243, 240, 238, 0.76);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.workflow-hero strong {
+  font-size: 64px;
+  font-weight: 500;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+}
+
+.workflow-hero p {
+  margin: 0;
+  color: rgba(243, 240, 238, 0.76);
+}
+
+.workflow-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: rgba(20, 20, 19, 0.08);
+}
+
+.workflow-metrics > div {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  min-height: 150px;
+  padding: 22px;
+  background: #fcfbfa;
+}
+
+.workflow-metrics span {
+  color: #696969;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.workflow-metrics strong {
+  font-size: 38px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.workflow-metrics .danger strong {
+  color: #cf4500;
+}
+
+.workflow-metrics .warning strong {
+  color: #9a3a0a;
+}
+
+.workflow-metrics .success strong {
+  color: #287a4b;
+}
+
+.production-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(20, 20, 19, 0.08);
+}
+
+.detail-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.job-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.75fr) minmax(320px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.job-detail-card {
+  min-width: 0;
+  padding: 20px;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+}
+
+.job-detail-summary {
+  display: grid;
+  gap: 12px;
+  color: #f3f0ee;
+  background: #141413;
+}
+
+.job-detail-summary span,
+.job-detail-summary p {
+  margin: 0;
+  color: rgba(243, 240, 238, 0.76);
+}
+
+.job-detail-summary h2,
+.job-detail-card h3 {
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.job-detail-logs {
+  grid-column: 1 / -1;
+}
+
+.review-drama-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.review-drama-card {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.review-drama-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(20, 20, 19, 0.18);
+  box-shadow: 0 18px 42px rgba(20, 20, 19, 0.08);
+}
+
+.review-drama-cover {
+  display: grid;
+  min-height: 170px;
+  color: #f3f0ee;
+  background: #141413;
+  place-items: center;
+}
+
+.review-drama-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.review-drama-cover span {
+  font-size: 34px;
+  font-weight: 700;
+}
+
+.review-drama-body {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px;
+}
+
+.review-drama-body h3 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-drama-body p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #696969;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.review-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+}
+
+.review-detail-header span {
+  color: #696969;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.review-detail-header h2 {
+  margin: 6px 0 0;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.review-workbench {
+  display: grid;
+  grid-template-columns: 260px minmax(360px, 1fr) minmax(340px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+.review-episode-list,
+.review-highlight-list,
+.review-editor {
+  min-width: 0;
+  padding: 18px;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+}
+
+.review-episode-list h3,
+.review-highlight-list h3,
+.review-editor h3 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.review-episode-item,
+.highlight-review-item {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+  padding: 14px;
+  color: #141413;
+  text-align: left;
+  background: #f8f6f4;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.review-episode-item + .review-episode-item,
+.highlight-review-item + .highlight-review-item {
+  margin-top: 10px;
+}
+
+.review-episode-item.active,
+.highlight-review-item.active {
+  background: #141413;
+  color: #f3f0ee;
+}
+
+.review-episode-item.active span,
+.highlight-review-item.active span,
+.highlight-review-item.active p {
+  color: rgba(243, 240, 238, 0.76);
+}
+
+.review-episode-item span,
+.highlight-review-item span,
+.highlight-review-item p,
+.review-list-toolbar p {
+  margin: 0;
+  color: #696969;
+}
+
+.review-list-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.review-list-toolbar .ant-tabs-nav {
+  margin: 0;
+}
+
+.highlight-review-item strong {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.highlight-review-item p {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.review-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.review-editor-grid .ant-form-item {
+  margin-bottom: 0;
+}
+
+.player-preview-card {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 16px;
+  color: #f3f0ee;
+  background: #141413;
+  border-radius: 16px;
+}
+
+.player-preview-card span,
+.player-preview-card p {
+  margin: 0;
+  color: rgba(243, 240, 238, 0.72);
+}
+
+.player-preview-card strong {
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.settings-page {
+  display: grid;
+  min-width: 0;
+}
+
+.settings-tabs-shell {
+  min-width: 0;
+  padding: 18px;
+  background: #fcfbfa;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 20px;
+}
+
+.settings-tabs .ant-tabs-nav {
+  align-items: center;
+  margin-top: -15px;
+  margin-bottom: 13px;
+}
+
+.settings-tabs .ant-tabs-nav-wrap {
+  flex: 0 1 auto;
+}
+
+.settings-tabs .ant-tabs-nav-list {
+  width: max-content;
+}
+
+.settings-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-panel {
+  display: grid;
+  min-width: 0;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 0;
+  border: 1px solid rgba(20, 20, 19, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.settings-grid .ant-form-item {
+  min-width: 0;
+  min-height: 64px;
+  margin-bottom: 0;
+  padding: 14px 18px;
+  background: #fcfbfa;
+  border-bottom: 1px solid rgba(20, 20, 19, 0.08);
+}
+
+.settings-grid .ant-form-item-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 320px);
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+}
+
+.settings-grid .ant-form-item:last-child {
+  border-bottom: 0;
+}
+
+.settings-grid .ant-form-item-label {
+  flex: none;
+  padding: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.settings-grid .ant-form-item-label > label {
+  height: auto;
+  color: #141413;
+  font-weight: 500;
+}
+
+.settings-grid .ant-form-item-control {
+  flex: none;
+  min-width: 0;
+  justify-self: end;
+  align-items: flex-end;
+}
+
+.settings-grid .ant-form-item-control-input {
+  width: 100%;
+}
+
+.settings-grid .ant-form-item-control-input-content {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.settings-grid .ant-input-number,
+.settings-grid .ant-select,
+.settings-grid .ant-input {
+  width: 200px;
+  max-width: 100%;
+}
+
+.settings-grid .ant-switch {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 1100px) {
   .workspace-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .content-overview,
+  .content-overview-focus {
+    grid-template-columns: 1fr;
+  }
+
+  .content-focus-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .drama-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workflow-overview,
+  .job-detail-layout,
+  .review-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .review-drama-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -398,5 +1247,46 @@
 
   .workspace-grid {
     grid-template-columns: 1fr;
+  }
+
+  .content-overview,
+  .content-overview-focus,
+  .workflow-overview,
+  .workflow-metrics,
+  .review-drama-grid,
+  .review-drama-card,
+  .drama-card-grid,
+  .episode-form-grid,
+  .content-focus-grid,
+  .review-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-topbar,
+  .review-detail-header,
+  .review-list-toolbar,
+  .production-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-grid .ant-form-item-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .content-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .content-search,
+  .content-filter {
+    width: 100%;
+    max-width: none;
   }
 }

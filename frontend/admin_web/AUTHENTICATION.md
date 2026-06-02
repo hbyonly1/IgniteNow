@@ -26,10 +26,11 @@
 /login            工作台登录页
 /workspace        统一工作台，按 role 跳转默认页
 /workspace/dashboard  仪表盘，admin
-/workspace/dramas     短剧管理，admin
-/workspace/episodes   剧集配置，admin/uploader
-/workspace/analyze    AI 高光识别，admin/uploader
-/workspace/highlights 高光审核发布，admin
+/workspace/dramas     内容管理，admin/uploader
+/workspace/analyze    AI 生产，admin/uploader
+/workspace/analyze/jobs/:jobId AI 任务详情，admin/uploader
+/workspace/highlights 审核发布，admin
+/workspace/highlights/dramas/:dramaId 短剧审核详情，admin
 ```
 
 访问 `/workspace/*` 时需要路由保护：本地有 access token 才允许进入，否则跳转 `/login`。页面路由会按 role 过滤，无权限页面会跳转到该角色默认页。后端返回 `401/403` 时，前端清除本地 token 并跳转 `/login`。
@@ -143,11 +144,11 @@ JWT sign / verify 工具
 require_user / require_roles / require_admin 依赖
 ```
 
-工作台 API 安全边界在后端：旧 `X-Admin-Token` 已移除，所有需要登录的接口都使用 Bearer JWT。`admin` 可访问高光审核、发布、analytics 和账号托管；`uploader` 只能访问上传、短剧/剧集配置读取和 AI 分析相关能力。
+工作台 API 安全边界在后端：旧 `X-Admin-Token` 已移除，所有需要登录的接口都使用 Bearer JWT。`admin` 可访问全部内容管理、高光审核、发布、analytics 和账号托管；`uploader` 只能访问上传、自己名下剧集的内容管理和 AI 分析相关能力。
 
 ## 8. 当前状态
 
-当前 `/login` 已接入真实后端 JWT 登录，不再写入开发占位 token。`/workspace/*` 已有工作台布局、路由守卫和按角色过滤的侧边栏，但各业务页面仍是占位页，后续需要继续接入短剧、剧集、AI 分析、高光审核和看板接口。
+当前 `/login` 已接入真实后端 JWT 登录，不再写入开发占位 token。`/workspace/*` 已有工作台布局、路由守卫和按角色过滤的侧边栏；内容管理和后台任务已接入真实接口，高光审核、AI 分析独立页和看板仍需继续完善。
 
 首次本地部署如果没有管理员账号，需要先在仓库根目录运行：
 

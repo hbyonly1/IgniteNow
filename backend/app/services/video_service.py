@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 
 from fastapi import Request
@@ -11,7 +12,7 @@ def is_remote_url(value: str) -> bool:
     return scheme in {"http", "https"}
 
 
-def local_video_path(value: str) -> Path | None:
+def local_video_path(value: str) -> Optional[Path]:
     if not value:
         return None
     direct_path = Path(value)

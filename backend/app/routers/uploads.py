@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.orm import Session
 
@@ -15,16 +17,16 @@ router = APIRouter(prefix="/uploads")
 @router.post("/episodes")
 async def upload_episode(
     request: Request,
-    drama_id: int | None = Form(default=None),
-    drama_title: str | None = Form(default=None),
+    drama_id: Optional[int] = Form(default=None),
+    drama_title: Optional[str] = Form(default=None),
     drama_description: str = Form(default=""),
     episode_no: int = Form(...),
     episode_title: str = Form(...),
     duration: float = Form(default=0),
     subtitle_content: str = Form(default=""),
     video_file: UploadFile = File(...),
-    subtitle_file: UploadFile | None = File(default=None),
-    _: UserAccount = Depends(require_user),
+    subtitle_file: Optional[UploadFile] = File(default=None),
+    user: UserAccount = Depends(require_user),
     db: Session = Depends(get_db),
 ):
     if episode_no < 1:
@@ -54,6 +56,7 @@ async def upload_episode(
         drama_id=drama.id,
         episode_no=episode_no,
         title=episode_title.strip(),
+        owner_user_id=user.id,
         video_url=str(video_path),
         subtitle_url=subtitle_url,
         subtitle_content=subtitle_text,

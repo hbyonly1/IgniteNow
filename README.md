@@ -30,9 +30,59 @@
 | 后台任务 | Redis + RQ |
 | 日志 | structlog |
 
+## `.env` 配置项说明
+
+```env
+# 主服务对外端口。容器内仍固定监听 8000；这里控制宿主机访问端口。
+APP_PORT=8000
+# 如果 APP_PORT 更改，下面的地址都应该更改
+# 后端静态资源基础地址，默认指向当前 FastAPI 服务。
+STATIC_BASE_URL=http://localhost:8000/static
+# 前端本地开发时访问的后端地址。
+VITE_API_BASE_URL=http://localhost:8000
+# Docker Compose 内部访问 postgres 服务时使用这个地址。
+# 如果修改了 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB，DATABASE_URL 也要同步修改。
+# 本机直接运行后端时可改为：postgresql://postgres:your_secure_password_here@localhost:5432/ignitenow
+# 只想快速本地跑 SQLite 时可改为：sqlite:///./backend/ignitenow.db
+DATABASE_URL=postgresql://postgres:your_secure_password_here@postgres:5432/ignitenow
+
+# Redis 对外端口。只影响宿主机访问端口，不影响 app/worker 访问 Redis。
+REDIS_PORT=6379
+# Redis 连接。Docker Compose 内部访问 redis 服务时使用这个地址。
+REDIS_URL=redis://redis:6379/0
+
+# PostgreSQL 对外端口。只影响宿主机访问端口，不影响容器内服务名。
+POSTGRES_PORT=5432
+# PostgreSQL 容器用户名。
+POSTGRES_USER=postgres
+# PostgreSQL 容器密码。生产环境必须修改。
+POSTGRES_PASSWORD=your_secure_password_here
+# PostgreSQL 数据库名。
+POSTGRES_DB=ignitenow
+
+# JWT 签名密钥。
+JWT_SECRET=your_jwt_secret_here
+# JWT 签名算法，当前后端默认使用 HS256。
+JWT_ALGORITHM=HS256
+# access token 有效期，单位：分钟。
+JWT_EXPIRE_MINUTES=120
+
+# RQ 队列名称，app 和 worker 必须保持一致。
+RQ_QUEUE_NAME=ignitenow
+
+# LLM 请求超时时间，单位：秒。
+LLM_TIMEOUT_SECONDS=90
+# LLM API Key。留空时 AI 分析会走本地 fallback 规则。
+LLM_API_KEY=
+# 兼容 OpenAI 协议的 LLM 服务地址。
+LLM_BASE_URL=https://api.openai.com/v1
+# LLM 模型名称。
+LLM_MODEL=gpt-4o-mini
+```
+
 ## 部署方式
 
-### 方式一：脚本安装
+### 方式一：手动部署
 
 适合已经在本机安装 Python、Node.js、Flutter、Redis 和数据库服务的开发环境。
 
@@ -46,54 +96,29 @@
 
 #### 快速开始
 
-复制环境变量文件：
-
 ```bash
+# 复制环境变量文件
 cp .env.example .env
-```
-
-如果使用本机 Redis 和 SQLite，可在 `.env` 中改为：
-
-```env
-DATABASE_URL=sqlite:///./ignitenow.db
-REDIS_URL=redis://localhost:6379/0
-```
-
-安装并启动后端：
-
-```bash
+# 按需修改环境变量
+nano .env
+# 安装并启动 FastAPI
 pip install -r backend/requirements.txt
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-启动 worker：
-
-```bash
+# 源码直接运行时，Redis 地址应使用宿主机地址：REDIS_URL=redis://localhost:6379/0
+# 启动 Redis
+redis-server
+# 启动 worker
 python -m backend.app.worker
-```
-
-首次没有管理员账号时，运行：
-
-```bash
+# 首次使用没有管理员账号时，运行脚本来获取一次性密码
 python backend/scripts/bootstrap_admin.py
 ```
 
-启动前端开发服务：
+若要启动前端开发服务：
 
 ```bash
 cd frontend/admin_web
 npm install
 npm run dev
-```
-
-#### 常用命令
-
-```bash
-python -m compileall backend ai_service
-python -m pytest tests
-cd frontend/admin_web
-npm exec eslint .
-npm run build
 ```
 
 ### 方式二：Docker Compose (推荐)
@@ -106,99 +131,16 @@ npm run build
 - Docker Compose
 
 #### 快速开始
+
 ```bash
 # 复制环境变量文件
 cp .env.example .env
-
 # 按需修改环境变量
 nano .env
-
 # 启动服务
 docker compose up --build -d
-
-# 查看后端日志
+# 查看日志
 docker compose logs -f app
-
-# 查看 worker 日志
-docker compose logs -f worker
-```
-
-#### `.env` 配置项
-
-```env
-# 主服务对外端口。容器内仍固定监听 8000；这里控制宿主机访问端口。
-APP_PORT=8000
-
-# 后端静态资源基础地址，默认指向当前 FastAPI 服务。
-# 如果 APP_PORT 改成 8080，这里应改为 http://localhost:8080/static。
-STATIC_BASE_URL=http://localhost:8000/static
-
-# PostgreSQL 对外端口。只影响宿主机访问端口，不影响容器内服务名。
-POSTGRES_PORT=5432
-
-# PostgreSQL 容器用户名。
-POSTGRES_USER=postgres
-
-# PostgreSQL 容器密码。生产环境必须修改。
-POSTGRES_PASSWORD=your_secure_password_here
-
-# PostgreSQL 数据库名。
-POSTGRES_DB=ignitenow
-
-# 数据库连接。Docker Compose 内部访问 postgres 服务时使用这个地址。
-# 如果修改了 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB，这里也要同步修改。
-DATABASE_URL=postgresql://postgres:password@postgres:5432/ignitenow
-
-
-# Redis 对外端口。只影响宿主机访问端口，不影响 app/worker 访问 Redis。
-REDIS_PORT=6379
-
-# Redis 连接。Docker Compose 内部访问 redis 服务时使用这个地址。
-REDIS_URL=redis://redis:6379/0
-
-# JWT 签名密钥。
-JWT_SECRET=your_jwt_secret_here
-
-# JWT 签名算法，当前后端默认使用 HS256。
-JWT_ALGORITHM=HS256
-
-# access token 有效期，单位：分钟。
-JWT_EXPIRE_MINUTES=120
-
-# RQ 队列名称，app 和 worker 必须保持一致。
-RQ_QUEUE_NAME=ignitenow
-
-# LLM 请求超时时间，单位：秒。
-LLM_TIMEOUT_SECONDS=90
-
-# LLM API Key。留空时 AI 分析会走本地 fallback 规则。
-LLM_API_KEY=
-
-# 兼容 OpenAI 协议的 LLM 服务地址。
-LLM_BASE_URL=https://api.openai.com/v1
-
-# LLM 模型名称。
-LLM_MODEL=gpt-4o-mini
-
-# 前端本地开发时访问的后端地址。
-# 如果 APP_PORT 改成 8080，这里应改为 http://localhost:8080。
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-### 方式三：从源码编译
-
-前端生产包由 `Dockerfile` 自动构建并托管到 FastAPI；如果本地手动编译，可执行：
-
-```bash
-cd frontend/admin_web
-npm install
-npm run build
-```
-
-构建完成后，后端会在检测到 `frontend/admin_web/dist` 存在时托管生产前端静态文件：
-
-```bash
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## 访问
@@ -217,20 +159,32 @@ Docker Compose 或生产镜像启动后，在浏览器中打开：
 - 工作台：`http://localhost:5173/workspace`
 
 如果 admin 密码是自动生成的，在 log 中查找：
+
 ```bash
 docker compose logs app
+# macOS / Linux ：
+docker compose logs app | grep "admin password"
+# Windows PowerShell ：
+docker compose logs app | Select-String "admin password"
 ```
 
-macOS / Linux 可使用：
+## 启动 flutter
 
 ```bash
-docker compose logs app | grep "admin password"
+cd mobile
+flutter pub get
 ```
 
-Windows PowerShell 可使用：
+启动 Android 模拟器：
 
-```powershell
-docker compose logs app | Select-String "admin password"
+```bash
+flutter run
+```
+
+真机或局域网调试时，把地址改成电脑的局域网 IP：
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://你的电脑局域网IP:8000
 ```
 
 ## 项目架构

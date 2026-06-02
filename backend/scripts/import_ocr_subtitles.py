@@ -6,6 +6,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -77,7 +78,7 @@ def is_noise_line(line: str) -> bool:
 
 def parse_ocr_file(path: Path) -> list[OcrBlock]:
     blocks: list[OcrBlock] = []
-    current_start: float | None = None
+    current_start: Optional[float] = None
     current_lines: list[str] = []
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw_line.strip()
@@ -142,7 +143,7 @@ def blocks_to_srt(blocks: list[OcrBlock]) -> str:
     return "\n\n".join(parts) + ("\n" if parts else "")
 
 
-def episode_no_from_name(path: Path) -> int | None:
+def episode_no_from_name(path: Path) -> Optional[int]:
     match = EPISODE_RE.search(path.stem)
     if not match:
         return None

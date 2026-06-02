@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.exc import IntegrityError
@@ -14,7 +16,7 @@ router = APIRouter()
 
 def _validate_interaction_identity(
     payload: InteractionCreate,
-    credentials: HTTPAuthorizationCredentials | None,
+    credentials: Optional[HTTPAuthorizationCredentials],
     db: Session,
 ) -> None:
     expected_prefix = f"{payload.user_id}_{payload.highlight_id}_{payload.action_type}_"
@@ -34,7 +36,7 @@ def _validate_interaction_identity(
 @router.post("/interactions")
 def create_interaction(
     payload: InteractionCreate,
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db),
 ):
     if payload.action_type not in ACTION_TYPES:

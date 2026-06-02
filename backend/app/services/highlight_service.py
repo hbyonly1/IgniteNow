@@ -1,3 +1,5 @@
+from typing import Optional, Union
+
 from sqlalchemy.orm import Session
 
 from ..models import Episode, HighlightEvent
@@ -15,7 +17,7 @@ def default_template(highlight_type: str) -> tuple[str, str]:
     return templates.get(highlight_type, ("我有感觉", "screen_flash"))
 
 
-def validate_highlight_payload(item: dict, episode: Episode | None = None) -> None:
+def validate_highlight_payload(item: dict, episode: Optional[Episode] = None) -> None:
     highlight_type = item.get("highlight_type")
     if highlight_type not in HIGHLIGHT_TYPES:
         raise ValueError(f"illegal highlight_type: {highlight_type}")
@@ -39,7 +41,7 @@ def validate_highlight_payload(item: dict, episode: Episode | None = None) -> No
         raise ValueError(f"illegal effect: {effect}")
 
 
-def normalize_highlight_data(data: dict, episode: Episode | None = None) -> dict:
+def normalize_highlight_data(data: dict, episode: Optional[Episode] = None) -> dict:
     validate_highlight_payload(data, episode)
     result = dict(data)
     button_text = result.get("button_text")
@@ -56,7 +58,7 @@ def normalize_highlight_data(data: dict, episode: Episode | None = None) -> dict
     return result
 
 
-def create_highlight(db: Session, episode: Episode, payload: HighlightCreate | dict) -> HighlightEvent:
+def create_highlight(db: Session, episode: Episode, payload: Union[HighlightCreate, dict]) -> HighlightEvent:
     data = payload.model_dump() if isinstance(payload, HighlightCreate) else dict(payload)
     data["status"] = data.get("status") or "draft"
     if data.get("status") not in HIGHLIGHT_STATUSES:
@@ -67,7 +69,7 @@ def create_highlight(db: Session, episode: Episode, payload: HighlightCreate | d
     return highlight
 
 
-def apply_highlight_update(highlight: HighlightEvent, payload: HighlightUpdate, episode: Episode | None = None) -> None:
+def apply_highlight_update(highlight: HighlightEvent, payload: HighlightUpdate, episode: Optional[Episode] = None) -> None:
     data = payload.model_dump(exclude_unset=True)
     if "status" in data and data["status"] not in HIGHLIGHT_STATUSES:
         raise ValueError("illegal status")

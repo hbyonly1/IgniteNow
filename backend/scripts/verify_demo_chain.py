@@ -4,7 +4,7 @@ import argparse
 import getpass
 import sys
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -64,8 +64,8 @@ def request_json(
     path: str,
     timeout: float,
     *,
-    headers: dict[str, str] | None = None,
-    json: dict[str, Any] | None = None,
+    headers: Optional[dict[str, str]] = None,
+    json: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     url = make_url(base_url, path)
     try:

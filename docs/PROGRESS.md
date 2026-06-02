@@ -1,5 +1,71 @@
 # 开发进度
 
+## 2026-05-30 内容管理页面合并
+
+### 已完成
+- 删除独立 `/workspace/episodes` 前端路由和菜单入口，将“短剧管理”升级为对 `admin` 与 `uploader` 都开放的“内容管理”。
+- 内容管理页面改为顶部指标、搜索筛选、短剧大缩略图网格；点击短剧卡片打开大尺寸 Drawer 管理该短剧下的剧集配置。
+- 剧集 Drawer 支持新增/编辑剧集、查看视频/字幕/AI/高光状态、提交 AI 分析任务和强制重跑；`admin` 额外显示短剧创建/编辑和高光审核入口。
+- 后端新增 `episode.owner_user_id`，移动端上传和工作台创建剧集都会记录当前账号；`admin` 可查看和操作全部剧集，`uploader` 只能查看、配置、分析自己名下剧集。
+- `GET /api/dramas` 与 `GET /api/episodes` 返回内容管理所需的聚合摘要字段；`POST /api/system/jobs`、任务列表和任务日志对 uploader 按剧集归属过滤。
+- 同步 `datebase/schema.sql`、`datebase/seed.sql`、`docs/API_CONTRACT.md` 和 `docs/DECISIONS.md`。
+
+### 已验证
+- `python -m compileall backend ai_service` 通过；本地 `backend/uploads/pytest-tmp` 目录因权限无法列出，但不影响代码编译。
+- `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+- 使用 `LOG_DIR=backend/logs` 和 `--basetemp .codex-pytest-tmp/run` 执行 `python -m pytest tests` 通过，共 28 个测试。
+
+### 遗留问题
+- 当前仍未引入 Alembic 等正式迁移体系；开发阶段以更新后的 `datebase/schema.sql` 为准，旧本地数据库如缺少 `owner_user_id` 可删除重建或重新初始化。
+
+## 2026-05-30 AI 生产与审核发布工作流
+
+### 已完成
+- 将工作台菜单中的 `AI 高光识别` 改为 `AI 生产`，页面从占位页升级为剧集生产队列，支持按短剧、AI 状态、字幕状态筛选。
+- AI 生产页展示待识别、识别中、识别失败和草稿高光概览；剧集行展示字幕状态、AI 状态、草稿高光数、最近任务和失败原因，并支持单集识别、强制重跑和批量提交。
+- 新增 AI 任务详情路由 `/workspace/analyze/jobs/:jobId`，展示任务状态、进度、关联短剧/剧集、任务 payload、生成摘要和任务日志。
+- 将 `高光审核发布` 改为 `审核发布`，入口页按短剧审核队列组织，不再展示全局散高光。
+- 新增短剧审核详情路由 `/workspace/highlights/dramas/:dramaId`，采用左侧剧集列表、中间高光列表、右侧高光详情编辑的质检台布局，支持保存、发布、驳回、归档和当前剧集批量发布/驳回。
+- 内容管理中的“去审核”入口改为跳转到对应短剧审核详情，并携带当前剧集 ID。
+
+### 已验证
+- `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+
+### 遗留问题
+- AI 任务详情页的生成摘要目前复用现有 `job.payload_json`、剧集高光计数和任务日志；如果后续要展示 provider、invalid_count、LLM 原始错误等更精细结果，应在 job 或独立 analysis_run 表中持久化分析结果摘要。
+
+## 2026-05-30 系统设置 UI 草案
+
+### 已完成
+- 将 `/workspace/settings` 从空占位页改为系统设置 UI 草案，面向 `admin` 展示可讨论的配置项和交互形态。
+- 设置页按 `AI 配置`、`审核规则`、`播放端`、`上传限制`、`安全` 五组组织，使用 Switch、Input、InputNumber 和 Select 表达真实配置控件。
+- 保存按钮仅提示“设置保存接口尚未接入”，不伪造后端持久化能力；当前页面用于确认配置项是否需要进入后续实现。
+
+### 已验证
+- `npm exec eslint .` 通过。
+- `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+
+### 遗留问题
+- 系统设置尚未接入 `system_settings` 数据表或后端保存接口；后续确认配置项后再补真实读写和生效逻辑。
+
+## 2026-05-30 Python 3.9 类型标注兼容
+
+### 已完成
+- 将后端运行路径和相关脚本中的 PEP 604 联合类型标注（例如 `datetime | None`、`HighlightCreate | dict`）替换为 Python 3.9 可解析的 `typing.Optional` / `typing.Union` 写法。
+- 保持 API、数据库字段和业务逻辑不变，仅调整类型标注语法，修复 Python 3.9 启动 uvicorn 时导入模型失败的问题。
+- 校正 `.env.example` 和 `README.md` 中 Docker Compose 示例数据库地址，使 `DATABASE_URL` 的用户名、密码和库名与下面的 `POSTGRES_*` 示例保持一致，并补充本机源码调试时改用 `localhost` / SQLite 的说明。
+- 补充 README 源码启动流程中的 Redis 启动步骤，并提示源码直接运行时 `REDIS_URL` 应改为 `redis://localhost:6379/0`。
+- 修复工作台后台任务页布局：移除 `JobsPage` 内重复嵌套的 `workspace-content` 容器，并为主内容、表格面板和 Ant Table wrapper 增加宽度收缩约束，避免 `workspace-table-panel` 未铺满且页面水平溢出。
+- 在工作台菜单中新增 admin 专属“系统设置”页面入口，路径为 `/workspace/settings`，先接入占位页面，后续再对接真实系统配置接口。
+
+### 已验证
+- `python -m compileall backend ai_service` 通过；本地 `backend/uploads/pytest-tmp` 目录因权限无法列出，但不影响代码编译。
+- 使用 `DATABASE_URL=sqlite:///./backend/ignitenow.db` 覆盖本机 Docker Compose 数据库配置后，`python -c "import backend.app.main"` 通过。
+- `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+
+### 遗留问题
+- 仓库 README 仍推荐 Python 3.12；Python 3.9 可通过本次语法兼容启动，但后续开发和 CI 仍应优先使用 README 记录的 3.12 环境。
+
 ## 2026-05-29 README 校正与补全
 
 ### 已完成
@@ -7,6 +73,7 @@
 - 校正 `frontend/admin_web/README.md`，同步当前 `/workspace/*` 路由、JWT 登录、角色过滤、后台任务页接入状态和仍未完成的业务页面。
 - 修正 `.env.example` 中 Docker Compose 默认 `REDIS_URL` 为 `redis://redis:6379/0`，本地源码调试时再改用 `redis://localhost:6379/0`。
 - 将 Docker Compose 的主服务端口、PostgreSQL 端口、Redis 端口和 PostgreSQL 用户/密码/库名改为 `.env` 可配置，并同步 README 示例。
+- 后端配置接入 `python-dotenv`，手动启动 `uvicorn`、worker 和 `bootstrap_admin.py` 时会自动读取仓库根目录 `.env`。
 
 ### 已验证
 - 对照 `docker-compose.yml`、`Dockerfile`、`backend/scripts/docker-entrypoint.sh`、`backend/scripts/bootstrap_admin.py`、前端 `package.json` 和当前路由配置核对 README 命令与服务名。
@@ -220,7 +287,7 @@
 ### 已完成
 - 将前端工作台路由从 `/admin/*` 改为 `/workspace/*`，旧 `/admin/*` 保留重定向到 `/workspace`。
 - 将前端命名从 `AdminWorkspace` / `adminModules` / `pages/admin` 调整为 `WorkspaceLayout` / `workspaceModules` / `pages/workspace`。
-- 登录页不再拒绝 `uploader`，而是根据角色分流：`admin` 默认进入仪表盘，`uploader` 默认进入剧集配置；侧边栏按角色过滤页面。
+- 登录页不再拒绝 `uploader`，而是根据角色分流：`admin` 默认进入仪表盘，`uploader` 默认进入内容管理；侧边栏按角色过滤页面。
 - 后端新增通用 `require_roles(...)` 权限依赖，并移除 `X-Admin-Token` / `ADMIN_TOKEN` 固定后台密钥逻辑。
 - 后端接口权限调整：`admin/uploader` 可访问短剧、剧集和 AI 分析；高光审核发布、analytics、账号托管和 demo seed 仅 `admin` 可访问。
 - 新增 `backend/scripts/bootstrap_admin.py`，用于在数据库无管理员时创建第一个 `admin` 并生成一次性随机密码。

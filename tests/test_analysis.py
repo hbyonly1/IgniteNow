@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from backend.app.models import Drama, Episode, HighlightEvent
+from backend.app.models import Drama, Episode, HighlightEvent, UserAccount
 
 
 def test_login_required_for_analysis(client: TestClient, demo_episode: Episode) -> None:
@@ -16,6 +16,10 @@ def test_analysis_requires_subtitle_and_marks_episode_failed(
     demo_episode: Episode,
     uploader_headers: dict[str, str],
 ) -> None:
+    uploader = db_session.query(UserAccount).filter(UserAccount.username == "uploader-user").one()
+    demo_episode.owner_user_id = uploader.id
+    db_session.commit()
+
     response = client.post(
         f"/api/episodes/{demo_episode.id}/analyze",
         json={"force_reanalyze": False},

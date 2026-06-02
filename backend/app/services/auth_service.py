@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import secrets
+from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException
@@ -18,7 +19,7 @@ UPLOADER_ROLE = "uploader"
 ALLOWED_ROLES = {ADMIN_ROLE, UPLOADER_ROLE}
 
 
-def hash_password(password: str, salt: str | None = None) -> str:
+def hash_password(password: str, salt: Optional[str] = None) -> str:
     salt = salt or secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 120_000)
     return f"pbkdf2_sha256${salt}${digest.hex()}"
@@ -60,7 +61,7 @@ def user_from_token(token: str, db: Session) -> UserAccount:
 
 
 def require_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db),
 ) -> UserAccount:
     if not credentials:

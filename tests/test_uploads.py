@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from backend.app.models import Drama, Episode
+from backend.app.models import Drama, Episode, UserAccount
 from backend.app.services import upload_service
 
 
@@ -59,6 +59,8 @@ def test_upload_episode_creates_drama_episode_and_player_entry(
     assert drama.title == "Upload Drama"
     assert episode is not None
     assert episode.subtitle_content.endswith("你好")
+    uploader = db_session.query(UserAccount).filter(UserAccount.username == "uploader").one()
+    assert episode.owner_user_id == uploader.id
     assert Path(episode.video_url).exists()
 
     dramas = client.get("/api/player/dramas").json()["data"]

@@ -10,7 +10,6 @@ import {
   Table,
   Tag,
   Tooltip,
-  Typography,
   message,
 } from 'antd';
 import { ReloadOutlined, RetweetOutlined, RocketOutlined } from '@ant-design/icons';
@@ -146,18 +145,8 @@ export default function JobsPage() {
   ];
 
   return (
-    <div className="workspace-content">
+    <>
       <section className="workspace-table-panel">
-        <div className="table-toolbar">
-          <div>
-            <Typography.Title level={2}>后台任务</Typography.Title>
-            <p>通过 RQ 提交耗时任务，并在数据库中保留进度和任务日志。</p>
-          </div>
-          <Button icon={<ReloadOutlined />} onClick={loadJobs}>
-            刷新
-          </Button>
-        </div>
-
         <Form
           form={form}
           className="job-create-form"
@@ -180,6 +169,11 @@ export default function JobsPage() {
               触发 AI 分析
             </Button>
           </Form.Item>
+          <Form.Item className="job-refresh-action">
+            <Button icon={<ReloadOutlined />} onClick={loadJobs}>
+              刷新
+            </Button>
+          </Form.Item>
         </Form>
 
         <Table
@@ -188,7 +182,7 @@ export default function JobsPage() {
           columns={columns}
           dataSource={jobs}
           pagination={{ pageSize: 10 }}
-          scroll={{ x: 960 }}
+          scroll={{ x: '100%' }}
         />
       </section>
 
@@ -212,6 +206,6 @@ export default function JobsPage() {
           ))}
         </Space>
       </Drawer>
-    </div>
+    </>
   );
 }

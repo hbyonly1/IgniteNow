@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,7 @@ def job_payload(job: Job) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def add_job_log(db: Session, job: Job, message: str, level: str = "info", context: dict | None = None) -> JobLog:
+def add_job_log(db: Session, job: Job, message: str, level: str = "info", context: Optional[dict] = None) -> JobLog:
     log = JobLog(
         job_id=job.id,
         level=level,
@@ -37,13 +37,13 @@ def mark_job_running(db: Session, job: Job, message: str = "job started") -> Non
     db.commit()
 
 
-def update_job_progress(db: Session, job: Job, progress: float, message: str, context: dict | None = None) -> None:
+def update_job_progress(db: Session, job: Job, progress: float, message: str, context: Optional[dict] = None) -> None:
     job.progress = min(99, max(0, progress))
     add_job_log(db, job, message, context=context)
     db.commit()
 
 
-def mark_job_success(db: Session, job: Job, message: str = "job completed", context: dict | None = None) -> None:
+def mark_job_success(db: Session, job: Job, message: str = "job completed", context: Optional[dict] = None) -> None:
     job.status = "success"
     job.progress = 100
     job.finished_at = datetime.utcnow()
