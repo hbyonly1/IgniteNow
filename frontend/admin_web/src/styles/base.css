@@ -25,3 +25,105 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+:root {
+  --ignitenow-primary: #1558ff;
+  --ignitenow-primary-hover: #0f4be8;
+  --ignitenow-text: #111827;
+  --ignitenow-muted: #667085;
+  --ignitenow-border: #dfe4ee;
+  --ignitenow-border-soft: #eef0f4;
+  --ignitenow-control-radius: 6px;
+}
+
+.ant-btn {
+  border-radius: var(--ignitenow-control-radius);
+}
+
+.ant-btn-primary {
+  background: var(--ignitenow-primary);
+  border-color: var(--ignitenow-primary);
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  background: var(--ignitenow-primary-hover) !important;
+  border-color: var(--ignitenow-primary-hover) !important;
+}
+
+.ant-btn:not(.ant-btn-primary) {
+  background: #ffffff;
+  border-color: var(--ignitenow-border);
+}
+
+.ant-btn:not(.ant-btn-primary):hover,
+.ant-btn:not(.ant-btn-primary):focus {
+  color: var(--ignitenow-primary);
+  background: #ffffff !important;
+  border-color: var(--ignitenow-primary) !important;
+}
+
+.ant-input,
+.ant-input-number,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-picker,
+.ant-mentions,
+.ant-input-number-group-addon {
+  background: #ffffff !important;
+  border-radius: var(--ignitenow-control-radius) !important;
+  box-shadow: none !important;
+}
+
+.ant-input,
+.ant-input-number,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-picker,
+.ant-mentions {
+  border-color: var(--ignitenow-border) !important;
+}
+
+.ant-input:hover,
+.ant-input-number:hover,
+.ant-input-affix-wrapper:hover,
+.ant-select:not(.ant-select-disabled):hover .ant-select-selector,
+.ant-picker:hover,
+.ant-mentions:hover {
+  border-color: #cfd6e4 !important;
+}
+
+.ant-input:focus,
+.ant-input-focused,
+.ant-input-number-focused,
+.ant-input-number:focus-within,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused,
+.ant-mentions-focused {
+  border-color: var(--ignitenow-primary) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(21, 88, 255, 0.1) !important;
+}
+
+.ant-select-multiple .ant-select-selection-item {
+  color: var(--ignitenow-text);
+  background: #ffffff !important;
+  border: 1px solid var(--ignitenow-border) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}
+
+.ant-select-multiple .ant-select-selection-item-remove {
+  color: var(--ignitenow-muted);
+}
+
+.ant-upload-wrapper .ant-upload-drag {
+  background: #ffffff !important;
+  border-color: #cfd6e4 !important;
+  border-radius: 8px !important;
+}
+
+.ant-tag {
+  border-radius: 4px;
+}

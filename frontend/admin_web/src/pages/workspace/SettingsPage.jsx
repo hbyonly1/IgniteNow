@@ -109,6 +109,12 @@ export default function SettingsPage() {
 
   return (
     <section className="settings-page">
+      <div className="content-page-header">
+        <div className="content-page-title">
+          <h1>系统设置</h1>
+          <p>维护 AI、审核、播放端、上传与安全配置</p>
+        </div>
+      </div>
       <Form form={form} layout="vertical" initialValues={initialValues}>
         <div className="settings-tabs-shell">
           <Tabs

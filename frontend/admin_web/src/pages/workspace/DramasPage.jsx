@@ -1,62 +1,50 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  Alert,
   Button,
-  Drawer,
   Empty,
   Form,
   Input,
   InputNumber,
   Modal,
-  Select,
-  Space,
+  Pagination,
+  Switch,
   Table,
   Tag,
   Tooltip,
+  Upload,
   message,
 } from 'antd';
 import {
+  CloseOutlined,
+  CloudUploadOutlined,
+  DeleteOutlined,
+  DownOutlined,
   EditOutlined,
   FileTextOutlined,
+  InboxOutlined,
+  MoreOutlined,
   PlusOutlined,
-  ReloadOutlined,
-  RocketOutlined,
   SearchOutlined,
-  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { getAdminUserRole } from '../../auth.js';
 import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
 
 const { TextArea } = Input;
 
-const analyzeStatusColors = {
-  pending: 'default',
-  processing: 'processing',
-  success: 'success',
-  failed: 'error',
-};
-
-const filterOptions = [
-  { value: 'all', label: '全部短剧' },
-  { value: 'needs_action', label: '待处理' },
-  { value: 'failed', label: '分析失败' },
-  { value: 'processing', label: '分析中' },
-  { value: 'published', label: '已发布' },
-];
-
-function sumBy(items, key) {
-  return items.reduce((total, item) => total + Number(item[key] ?? 0), 0);
-}
-
-function formatDuration(value) {
-  const seconds = Math.round(Number(value ?? 0));
-  if (!seconds) {
+function formatDateTime(value) {
+  if (!value) {
     return '-';
   }
-  const minute = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  return `${minute}:${String(rest).padStart(2, '0')}`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}`;
 }
 
 function dramaRisk(drama) {
@@ -76,39 +64,16 @@ function dramaRisk(drama) {
 }
 
 export default function DramasPage() {
-  const navigate = useNavigate();
   const role = getAdminUserRole();
   const isAdmin = role === 'admin';
   const [dramas, setDramas] = useState([]);
-  const [episodes, setEpisodes] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [episodesLoading, setEpisodesLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [selectedDrama, setSelectedDrama] = useState(null);
-  const [drawerMode, setDrawerMode] = useState('list');
-  const [editingEpisode, setEditingEpisode] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [dramaModalOpen, setDramaModalOpen] = useState(false);
   const [editingDrama, setEditingDrama] = useState(null);
   const [dramaForm] = Form.useForm();
-  const [episodeForm] = Form.useForm();
-
-  const metrics = useMemo(
-    () => ({
-      dramaCount: dramas.length,
-      episodeCount: sumBy(dramas, 'episode_count'),
-      pendingEpisodeCount: sumBy(dramas, 'pending_episode_count'),
-      processingEpisodeCount: sumBy(dramas, 'processing_episode_count'),
-      failedEpisodeCount: sumBy(dramas, 'failed_episode_count'),
-      draftHighlightCount: sumBy(dramas, 'draft_highlight_count'),
-      publishedHighlightCount: sumBy(dramas, 'published_highlight_count'),
-    }),
-    [dramas],
-  );
-
-  const actionCount =
-    metrics.pendingEpisodeCount + metrics.failedEpisodeCount + metrics.draftHighlightCount;
 
   const filteredDramas = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -120,21 +85,17 @@ export default function DramasPage() {
       if (!matchesKeyword) {
         return false;
       }
-      if (filter === 'needs_action') {
-        return drama.pending_episode_count > 0 || drama.failed_episode_count > 0 || drama.draft_highlight_count > 0;
-      }
-      if (filter === 'failed') {
-        return drama.failed_episode_count > 0;
-      }
-      if (filter === 'processing') {
-        return drama.processing_episode_count > 0;
-      }
-      if (filter === 'published') {
-        return drama.published_highlight_count > 0;
-      }
       return true;
     });
-  }, [dramas, filter, query]);
+  }, [dramas, query]);
+
+  const pageSize = 6;
+  const maxPage = Math.max(1, Math.ceil(filteredDramas.length / pageSize));
+  const effectivePage = Math.min(currentPage, maxPage);
+  const pagedDramas = useMemo(() => {
+    const start = (effectivePage - 1) * pageSize;
+    return filteredDramas.slice(start, start + pageSize);
+  }, [effectivePage, filteredDramas]);
 
   const loadDramas = async () => {
     setLoading(true);
@@ -148,40 +109,36 @@ export default function DramasPage() {
     }
   };
 
-  const loadEpisodes = async (drama) => {
-    setEpisodesLoading(true);
-    try {
-      const response = await apiClient.get('/api/episodes', { params: { drama_id: drama.id } });
-      setEpisodes(response.data.data ?? []);
-    } catch (error) {
-      message.error(apiErrorMessage(error, '剧集列表加载失败'));
-    } finally {
-      setEpisodesLoading(false);
-    }
-  };
-
-  const openDrama = async (drama) => {
-    setSelectedDrama(drama);
-    setDrawerMode('list');
-    setEditingEpisode(null);
-    await loadEpisodes(drama);
-  };
-
-  const closeDrawer = () => {
-    setSelectedDrama(null);
-    setEpisodes([]);
-    setDrawerMode('list');
-    setEditingEpisode(null);
-  };
-
   const openDramaModal = (drama = null) => {
     setEditingDrama(drama);
     dramaForm.setFieldsValue(
-      drama ?? {
-        title: '',
-        description: '',
-        cover_url: '',
-      },
+      drama
+        ? {
+            title: drama.title,
+            description: drama.description,
+            cover_url: drama.cover_url,
+            episode_count_hint: drama.episode_count ?? 24,
+            categories: ['都市', '情感', '逆袭'],
+            keywords: ['总裁', '闪婚', '反转'],
+            initial_status: 'draft',
+            auto_timeline: true,
+            auto_highlight: true,
+            generate_suggestion: true,
+            analyze_after_upload: true,
+          }
+        : {
+            title: '',
+            description: '',
+            cover_url: '',
+            episode_count_hint: 24,
+            categories: ['都市', '情感', '逆袭'],
+            keywords: ['总裁', '闪婚', '反转'],
+            initial_status: 'draft',
+            auto_timeline: true,
+            auto_highlight: true,
+            generate_suggestion: true,
+            analyze_after_upload: true,
+          },
     );
     setDramaModalOpen(true);
   };
@@ -189,11 +146,16 @@ export default function DramasPage() {
   const submitDrama = async (values) => {
     setSubmitting(true);
     try {
+      const payload = {
+        title: values.title,
+        description: values.description ?? '',
+        cover_url: values.cover_url ?? '',
+      };
       if (editingDrama) {
-        await apiClient.put(`/api/dramas/${editingDrama.id}`, values);
+        await apiClient.put(`/api/dramas/${editingDrama.id}`, payload);
         message.success('短剧已更新');
       } else {
-        await apiClient.post('/api/dramas', values);
+        await apiClient.post('/api/dramas', payload);
         message.success('短剧已创建');
       }
       setDramaModalOpen(false);
@@ -205,153 +167,69 @@ export default function DramasPage() {
     }
   };
 
-  const openEpisodeForm = (episode = null) => {
-    setEditingEpisode(episode);
-    episodeForm.setFieldsValue(
-      episode ?? {
-        episode_no: episodes.length + 1,
-        title: '',
-        video_url: '',
-        subtitle_url: '',
-        subtitle_content: '',
-        duration: 0,
-      },
-    );
-    setDrawerMode('episodeForm');
-  };
-
-  const submitEpisode = async (values) => {
-    if (!selectedDrama) {
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const payload = {
-        ...values,
-        drama_id: selectedDrama.id,
-        subtitle_url: values.subtitle_url ?? '',
-        subtitle_content: values.subtitle_content ?? '',
-        duration: values.duration ?? 0,
-      };
-      if (editingEpisode) {
-        await apiClient.put(`/api/episodes/${editingEpisode.id}`, payload);
-        message.success('剧集配置已更新');
-      } else {
-        await apiClient.post('/api/episodes', payload);
-        message.success('剧集已创建');
-      }
-      setDrawerMode('list');
-      setEditingEpisode(null);
-      await Promise.all([loadEpisodes(selectedDrama), loadDramas()]);
-    } catch (error) {
-      message.error(apiErrorMessage(error, '剧集保存失败'));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const submitAnalyzeJob = async (episode, forceReanalyze = false) => {
-    try {
-      await apiClient.post('/api/system/jobs', {
-        type: 'ai_analyze',
-        payload: {
-          episode_id: episode.id,
-          force_reanalyze: forceReanalyze,
-        },
-      });
-      message.success(forceReanalyze ? '强制重跑任务已提交' : 'AI 分析任务已提交');
-      navigate('/workspace/jobs');
-    } catch (error) {
-      message.error(apiErrorMessage(error, 'AI 任务提交失败'));
-    }
-  };
-
   useEffect(() => {
     Promise.resolve().then(loadDramas);
   }, []);
 
-  const episodeColumns = [
+  const dramaColumns = [
+    {
+      title: '剧集名称',
+      dataIndex: 'title',
+      render: (_, record) => (
+        <div className="drama-list-title">
+          <span className="drama-list-cover">
+            {record.cover_url ? <img src={record.cover_url} alt="" loading="lazy" /> : <span>{record.title.slice(0, 2)}</span>}
+          </span>
+          <span className="drama-list-copy">
+            <strong>{record.title}</strong>
+            {record.description ? <span>{record.description}</span> : null}
+          </span>
+        </div>
+      ),
+    },
     {
       title: '集数',
-      dataIndex: 'episode_no',
-      width: 76,
-      sorter: (a, b) => a.episode_no - b.episode_no,
-      render: (value) => `E${String(value).padStart(3, '0')}`,
+      dataIndex: 'episode_count',
+      width: 110,
+      render: (value) => `${value ?? 0} 集`,
     },
     {
-      title: '标题',
-      dataIndex: 'title',
-      ellipsis: true,
+      title: '状态',
+      key: 'status',
+      width: 130,
+      render: (_, record) => {
+        const risk = dramaRisk(record);
+        return (
+          <Tag className="drama-list-status" color={risk.color}>
+            {risk.label}
+          </Tag>
+        );
+      },
     },
     {
-      title: '时长',
-      dataIndex: 'duration',
-      width: 88,
-      render: formatDuration,
-    },
-    {
-      title: '视频',
-      dataIndex: 'video_url',
-      width: 88,
-      render: (value) => <Tag color={value ? 'success' : 'error'}>{value ? '已配置' : '缺失'}</Tag>,
-    },
-    {
-      title: '字幕',
-      key: 'subtitle',
-      width: 88,
-      render: (_, record) => (
-        <Tag color={record.subtitle_content || record.subtitle_url ? 'success' : 'warning'}>
-          {record.subtitle_content || record.subtitle_url ? '已配置' : '缺失'}
-        </Tag>
-      ),
-    },
-    {
-      title: 'AI',
-      dataIndex: 'analyze_status',
-      width: 112,
-      render: (value, record) => (
-        <Tooltip title={value === 'failed' ? record.analyze_error : ''}>
-          <Tag color={analyzeStatusColors[value] ?? 'default'}>{value}</Tag>
-        </Tooltip>
-      ),
-    },
-    {
-      title: '高光',
-      key: 'highlights',
-      width: 170,
-      render: (_, record) => (
-        <Space size={4} wrap>
-          <Tag>草稿 {record.draft_highlight_count ?? 0}</Tag>
-          <Tag color="success">发布 {record.published_highlight_count ?? 0}</Tag>
-        </Space>
-      ),
+      title: '最后更新时间',
+      key: 'updated_at',
+      width: 180,
+      render: (_, record) => formatDateTime(record.updated_at ?? record.created_at),
     },
     {
       title: '操作',
       key: 'actions',
-      width: 250,
-      fixed: 'right',
+      width: 100,
+      align: 'right',
       render: (_, record) => (
-        <Space size={8}>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEpisodeForm(record)}>
-            配置
-          </Button>
-          <Tooltip title="触发 AI 分析">
-            <Button size="small" icon={<RocketOutlined />} onClick={() => submitAnalyzeJob(record)} />
+        isAdmin ? (
+          <Tooltip title="编辑短剧">
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              onClick={(event) => {
+                event.stopPropagation();
+                openDramaModal(record);
+              }}
+            />
           </Tooltip>
-          <Tooltip title="强制重跑">
-            <Button size="small" icon={<ThunderboltOutlined />} onClick={() => submitAnalyzeJob(record, true)} />
-          </Tooltip>
-          {isAdmin ? (
-            <Tooltip title="去审核">
-              <Button
-                size="small"
-                icon={<FileTextOutlined />}
-                onClick={() => navigate(`/workspace/highlights/dramas/${selectedDrama.id}?episode_id=${record.id}`)}
-              />
-            </Tooltip>
-          ) : null}
-        </Space>
+        ) : null
       ),
     },
   ];
@@ -359,200 +237,275 @@ export default function DramasPage() {
   return (
     <>
       <section className="content-management">
-        <div className="content-overview">
-          <div className="content-overview-primary">
-            <span>内容资产</span>
-            <strong>{metrics.dramaCount} 部短剧</strong>
-            <div className="content-overview-pills">
-              <Tag>{metrics.processingEpisodeCount} 分析中</Tag>
-              <Tag color="success">{metrics.publishedHighlightCount} 已发布高光</Tag>
-            </div>
+        <div className="content-page-header">
+          <div className="content-page-title">
+            <h1>内容管理</h1>
+            <p>管理短剧资产、剧集配置、字幕输入和 AI 分析状态</p>
           </div>
-          <div className="content-overview-focus">
-            <div className="content-focus-main">
-              <span>待处理</span>
-              <strong>{actionCount}</strong>
-            </div>
-            <div className="content-focus-grid">
-              <div className="content-focus-item">
-                <span>待分析剧集</span>
-                <strong>{metrics.pendingEpisodeCount}</strong>
-              </div>
-              <div className="content-focus-item danger">
-                <span>分析失败</span>
-                <strong>{metrics.failedEpisodeCount}</strong>
-              </div>
-              <div className="content-focus-item warning">
-                <span>待审核高光</span>
-                <strong>{metrics.draftHighlightCount}</strong>
-              </div>
-            </div>
+          <div className="content-toolbar">
+            <Input
+              className="content-search"
+              allowClear
+              suffix={<SearchOutlined />}
+              placeholder="搜索短剧名称或关键词"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setCurrentPage(1);
+              }}
+            />
+            {isAdmin ? (
+              <Button type="primary" className="content-upload-action" icon={<CloudUploadOutlined />} onClick={() => openDramaModal()}>
+                上传短剧
+              </Button>
+            ) : null}
           </div>
         </div>
 
-        <div className="content-toolbar">
-          <Input
-            className="content-search"
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="搜索短剧"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
+        <div className="drama-list-panel">
+          <Table
+            rowKey="id"
+            loading={loading}
+            columns={dramaColumns}
+            dataSource={pagedDramas}
+            locale={{ emptyText: <Empty description={loading ? '加载中' : '暂无内容'} /> }}
+            pagination={false}
           />
-          <Select className="content-filter" value={filter} options={filterOptions} onChange={setFilter} />
-          <Button icon={<ReloadOutlined />} onClick={loadDramas} loading={loading}>
-            刷新
-          </Button>
-          {isAdmin ? (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => openDramaModal()}>
-              新建短剧
-            </Button>
-          ) : null}
+          <div className="drama-list-pagination">
+            <span>共 {filteredDramas.length} 条</span>
+            <Pagination
+              current={effectivePage}
+              pageSize={pageSize}
+              total={filteredDramas.length}
+              showSizeChanger={false}
+              onChange={setCurrentPage}
+            />
+          </div>
         </div>
-
-        {filteredDramas.length ? (
-          <div className="drama-card-grid">
-            {filteredDramas.map((drama) => {
-              const risk = dramaRisk(drama);
-              return (
-                <article className="drama-card" key={drama.id} onClick={() => openDrama(drama)}>
-                  <div className="drama-cover">
-                    {drama.cover_url ? <img src={drama.cover_url} alt="" loading="lazy" /> : <span>{drama.title.slice(0, 2)}</span>}
-                    <Tag className="drama-risk" color={risk.color}>
-                      {risk.label}
-                    </Tag>
-                  </div>
-                  <div className="drama-card-body">
-                    <div className="drama-card-title-row">
-                      <h3>{drama.title}</h3>
-                      {isAdmin ? (
-                        <Button
-                          size="small"
-                          icon={<EditOutlined />}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openDramaModal(drama);
-                          }}
-                        />
-                      ) : null}
-                    </div>
-                    <p>{drama.description || '暂无简介'}</p>
-                    <div className="drama-stats">
-                      <span>{drama.episode_count ?? 0} 集</span>
-                      <span>{drama.pending_episode_count ?? 0} 待分析</span>
-                      <span>{drama.failed_episode_count ?? 0} 失败</span>
-                      <span>{drama.draft_highlight_count ?? 0} 待审核</span>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="content-empty">
-            <Empty description={loading ? '加载中' : '暂无内容'} />
-          </div>
-        )}
       </section>
 
-      <Drawer
-        title={selectedDrama?.title ?? '剧集配置'}
-        open={Boolean(selectedDrama)}
-        onClose={closeDrawer}
-        width={920}
-        className="episode-config-drawer"
-        extra={
-          drawerMode === 'list' ? (
-            <Space>
-              <Button icon={<ReloadOutlined />} onClick={() => selectedDrama && loadEpisodes(selectedDrama)}>
-                刷新
-              </Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => openEpisodeForm()}>
-                新增剧集
-              </Button>
-            </Space>
-          ) : null
-        }
-      >
-        {drawerMode === 'list' ? (
-          <>
-            {selectedDrama ? (
-              <div className="drawer-drama-summary">
-                <p>{selectedDrama.description || '暂无简介'}</p>
-                <Space size={8} wrap>
-                  <Tag>{selectedDrama.episode_count ?? 0} 集</Tag>
-                  <Tag color="warning">{selectedDrama.draft_highlight_count ?? 0} 待审核</Tag>
-                  <Tag color="success">{selectedDrama.published_highlight_count ?? 0} 已发布</Tag>
-                  <Tag color={selectedDrama.failed_episode_count ? 'error' : 'default'}>
-                    {selectedDrama.failed_episode_count ?? 0} 失败
-                  </Tag>
-                </Space>
-              </div>
-            ) : null}
-            <Table
-              rowKey="id"
-              loading={episodesLoading}
-              columns={episodeColumns}
-              dataSource={episodes}
-              pagination={{ pageSize: 8 }}
-              scroll={{ x: 980 }}
-            />
-          </>
-        ) : (
-          <Form form={episodeForm} layout="vertical" onFinish={submitEpisode} className="episode-form">
-            {editingEpisode?.analyze_status === 'failed' && editingEpisode.analyze_error ? (
-              <Alert type="error" showIcon message={editingEpisode.analyze_error} />
-            ) : null}
-            <div className="episode-form-grid">
-              <Form.Item name="episode_no" label="集数" rules={[{ required: true, message: '请输入集数' }]}>
-                <InputNumber min={1} precision={0} />
-              </Form.Item>
-              <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item name="duration" label="时长（秒）">
-                <InputNumber min={0} precision={2} />
-              </Form.Item>
-            </div>
-            <Form.Item name="video_url" label="视频 URL / 服务端路径" rules={[{ required: true, message: '请输入视频地址' }]}>
-              <Input />
-            </Form.Item>
-            <Form.Item name="subtitle_url" label="字幕 URL / 服务端路径">
-              <Input />
-            </Form.Item>
-            <Form.Item name="subtitle_content" label="字幕正文">
-              <TextArea rows={12} />
-            </Form.Item>
-            <div className="episode-form-actions">
-              <Button onClick={() => setDrawerMode('list')}>取消</Button>
-              <Button type="primary" htmlType="submit" loading={submitting}>
-                保存
-              </Button>
-            </div>
-          </Form>
-        )}
-      </Drawer>
-
       <Modal
-        title={editingDrama ? '编辑短剧' : '新建短剧'}
+        className="upload-drama-modal"
+        title={null}
         open={dramaModalOpen}
         onCancel={() => setDramaModalOpen(false)}
-        onOk={() => dramaForm.submit()}
-        confirmLoading={submitting}
+        closable={false}
+        footer={null}
+        width={920}
         destroyOnHidden
       >
-        <Form form={dramaForm} layout="vertical" onFinish={submitDrama}>
-          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="description" label="简介">
-            <TextArea rows={4} />
-          </Form.Item>
-          <Form.Item name="cover_url" label="封面 URL">
-            <Input />
-          </Form.Item>
+        <div className="upload-drama-header">
+          <div>
+            <h2>{editingDrama ? '编辑短剧' : '上传短剧'}</h2>
+            <p>创建新的短剧资产，并提交素材进入 AI 分析流程</p>
+          </div>
+          <Button
+            type="text"
+            className="upload-drama-close"
+            icon={<CloseOutlined />}
+            onClick={() => setDramaModalOpen(false)}
+          />
+        </div>
+
+        <Form form={dramaForm} layout="vertical" onFinish={submitDrama} className="upload-drama-form">
+          <section className="upload-drama-card upload-drama-basic">
+            <div className="upload-cover-panel">
+              <h3>封面设置</h3>
+              <Upload.Dragger className="upload-cover-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
+                <CloudUploadOutlined />
+                <strong>上传封面</strong>
+                <span>建议尺寸 3:4，JPG/PNG</span>
+              </Upload.Dragger>
+              <Form.Item label="短剧横版封面（可选）">
+                <Upload.Dragger className="upload-wide-cover-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
+                  <InboxOutlined />
+                  <strong>上传横版封面</strong>
+                  <span>建议尺寸 16:9，JPG/PNG</span>
+                </Upload.Dragger>
+              </Form.Item>
+            </div>
+
+            <div className="upload-info-panel">
+              <Form.Item name="title" label="短剧名称" rules={[{ required: true, message: '请输入短剧名称' }]}>
+                <Input placeholder="请输入短剧名称" />
+              </Form.Item>
+              <Form.Item label="剧集数量">
+                <div className="episode-count-field">
+                  <Form.Item name="episode_count_hint" noStyle>
+                    <InputNumber min={1} precision={0} controls={false} />
+                  </Form.Item>
+                  <span>集</span>
+                </div>
+              </Form.Item>
+              <Form.Item name="categories" label="所属分类">
+                <CategoryDropdown placeholder="请选择所属分类" />
+              </Form.Item>
+              <Form.Item name="keywords" label="主演">
+                <TagInput placeholder="请输入主演" />
+              </Form.Item>
+              <Form.Item name="description" label="内容简介">
+                <TextArea
+                  rows={4}
+                  maxLength={200}
+                  showCount
+                  placeholder="请输入短剧内容简介，帮助 AI 更好地理解剧情和角色设定。建议包含题材、核心冲突、角色关系等关键信息，50-200 字。"
+                />
+              </Form.Item>
+            </div>
+          </section>
+
+          <section className="upload-drama-card">
+            <h3>素材上传</h3>
+            <div className="upload-assets-grid">
+              <Upload.Dragger className="upload-asset-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
+                <CloudUploadOutlined />
+                <strong>拖拽文件到此处或点击上传</strong>
+                <span>支持 MP4 / MOV，单文件不超过 2GB</span>
+              </Upload.Dragger>
+              <Upload.Dragger className="upload-asset-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
+                <CloudUploadOutlined />
+                <strong>导入 SRT / VTT / TXT</strong>
+                <span>也可稍后在内容管理中补充</span>
+              </Upload.Dragger>
+              <Upload.Dragger className="upload-asset-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
+                <FileTextOutlined />
+                <strong>批量导入剧集配置</strong>
+                <span>Excel / CSV</span>
+              </Upload.Dragger>
+            </div>
+            <div className="upload-file-chip">
+              <span className="upload-file-icon">▶</span>
+              <strong>第1集_1080p.mp4</strong>
+              <span>1.24GB</span>
+              <em>上传完成</em>
+              <DeleteOutlined />
+            </div>
+          </section>
+
+          <section className="upload-drama-card">
+            <h3>AI 分析设置</h3>
+            <div className="upload-ai-settings">
+              <Form.Item>
+                <Form.Item name="auto_timeline" valuePropName="checked" noStyle>
+                  <Switch checkedChildren="" unCheckedChildren="" />
+                </Form.Item>
+                <span>自动时间轴对齐</span>
+              </Form.Item>
+              <Form.Item>
+                <Form.Item name="auto_highlight" valuePropName="checked" noStyle>
+                  <Switch checkedChildren="" unCheckedChildren="" />
+                </Form.Item>
+                <span>自动识别高光点</span>
+              </Form.Item>
+              <Form.Item>
+                <Form.Item name="generate_suggestion" valuePropName="checked" noStyle>
+                  <Switch checkedChildren="" unCheckedChildren="" />
+                </Form.Item>
+                <span>生成互动策略建议</span>
+              </Form.Item>
+              <Form.Item>
+                <Form.Item name="analyze_after_upload" valuePropName="checked" noStyle>
+                  <Switch checkedChildren="" unCheckedChildren="" />
+                </Form.Item>
+                <span>上传后立即开始分析</span>
+              </Form.Item>
+            </div>
+            <Form.Item label="默认发布状态" className="upload-status-field">
+              <div className="upload-status-select">
+                <span>草稿</span>
+                <MoreOutlined />
+              </div>
+            </Form.Item>
+          </section>
+
+          <div className="upload-drama-footer">
+            <Button onClick={() => setDramaModalOpen(false)}>取消</Button>
+            <Button type="primary" htmlType="submit" loading={submitting}>
+              完成
+            </Button>
+          </div>
         </Form>
       </Modal>
     </>
+  );
+}
+
+const categoryOptions = ['都市', '情感', '逆袭', '悬疑', '甜宠'];
+
+function CategoryDropdown({ value = [], onChange, placeholder }) {
+  const [open, setOpen] = useState(false);
+
+  const toggleItem = (item) => {
+    const nextValue = value.includes(item)
+      ? value.filter((current) => current !== item)
+      : [...value, item];
+    onChange?.(nextValue);
+  };
+
+  const removeItem = (event, item) => {
+    event.stopPropagation();
+    onChange?.(value.filter((current) => current !== item));
+  };
+
+  return (
+    <div className={`category-dropdown${open ? ' open' : ''}`}>
+      <button className="category-dropdown-trigger" type="button" onClick={() => setOpen((current) => !current)}>
+        <span className="category-dropdown-values">
+          {value.length ? (
+            value.map((item) => (
+              <span className="category-tag" key={item}>
+                {item}
+                <button type="button" onClick={(event) => removeItem(event, item)}>
+                  ×
+                </button>
+              </span>
+            ))
+          ) : (
+            <em>{placeholder}</em>
+          )}
+        </span>
+        <DownOutlined />
+      </button>
+      {open ? (
+        <div className="category-dropdown-menu">
+          {categoryOptions.map((item) => (
+            <button
+              className={value.includes(item) ? 'selected' : ''}
+              key={item}
+              type="button"
+              onClick={() => toggleItem(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TagInput({ value = [], onChange, placeholder }) {
+  const removeItem = (item) => {
+    onChange?.(value.filter((current) => current !== item));
+  };
+
+  return (
+    <div className="tag-input-field">
+      {value.length ? (
+        value.map((item) => (
+          <span key={item}>
+            {item}
+            <button type="button" onClick={() => removeItem(item)}>
+              ×
+            </button>
+          </span>
+        ))
+      ) : (
+        <em>{placeholder}</em>
+      )}
+      <button className="tag-input-add" type="button">
+        <PlusOutlined />
+      </button>
+    </div>
   );
 }

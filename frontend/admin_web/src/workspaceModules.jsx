@@ -2,7 +2,6 @@ import {
   BarChartOutlined,
   ExperimentOutlined,
   FileTextOutlined,
-  FieldTimeOutlined,
   SettingOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
@@ -31,7 +30,7 @@ export const workspaceModules = [
   {
     id: 'analyze',
     path: '/workspace/analyze',
-    title: 'AI 生产',
+    title: 'AI 分析',
     eyebrow: 'AI OPS',
     description: '批量识别剧集高光，追踪 AI 任务状态、失败原因和生成结果。',
     icon: <ExperimentOutlined />,
@@ -41,22 +40,12 @@ export const workspaceModules = [
   {
     id: 'highlights',
     path: '/workspace/highlights',
-    title: '审核发布',
-    eyebrow: 'REVIEW',
-    description: '按短剧和剧集审核 AI 高光，编辑互动配置并发布到播放端。',
+    title: '发布中心',
+    eyebrow: 'PUBLISH',
+    description: '管理发布编排、渠道配置、定时发布与上线状态。',
     icon: <FileTextOutlined />,
     roles: ['admin'],
-    status: '质检台',
-  },
-  {
-    id: 'jobs',
-    path: '/workspace/jobs',
-    title: '后台任务',
-    eyebrow: 'JOBS',
-    description: '提交 AI 分析等耗时任务，查看 RQ 队列执行状态与任务日志。',
-    icon: <FieldTimeOutlined />,
-    roles: ['admin', 'uploader'],
-    status: 'RQ',
+    status: '发布台',
   },
   {
     id: 'settings',

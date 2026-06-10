@@ -3,33 +3,111 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
   Button,
-  Descriptions,
+  Checkbox,
   Empty,
-  Form,
-  Progress,
+  Input,
+  Modal,
+  Pagination,
+  Radio,
   Select,
-  Space,
+  Switch,
   Table,
   Tag,
-  Tooltip,
   message,
 } from 'antd';
 import {
   ArrowLeftOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseOutlined,
   FileSearchOutlined,
+  FolderOpenOutlined,
+  PlayCircleFilled,
   ReloadOutlined,
-  RocketOutlined,
-  ThunderboltOutlined,
+  RotateRightOutlined,
+  SearchOutlined,
+  SendOutlined,
+  StarOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
 
-const statusColors = {
-  pending: 'default',
-  processing: 'processing',
-  success: 'success',
-  failed: 'error',
-  running: 'processing',
-  canceled: 'warning',
+const stageMeta = {
+  pending: { label: '排队中', color: 'default' },
+  processing: { label: '高光识别', color: 'processing' },
+  success: { label: '已完成', color: 'success' },
+  failed: { label: '失败', color: 'error' },
+};
+
+const mockAnalysisRow = {
+  id: 'mock-analysis-task',
+  is_mock: true,
+  task_no: 'T20240518-001',
+  drama_title: '她的逆袭人生',
+  title: '第 1 集',
+  episode_no: 1,
+  analyze_status: 'processing',
+  progress: 62,
+  cover_url: '',
+  latest_job: null,
+  subtitle_ready: true,
+  updated_at_display: new Date(),
+};
+
+const mockJobDetail = {
+  job: {
+    id: 'mock-analysis-task',
+    type: 'ai_analyze',
+    status: 'running',
+    progress: 62,
+    payload_json: JSON.stringify({ episode_id: 'mock-episode-001', force_reanalyze: false }),
+    created_at: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
+    updated_at: new Date().toISOString(),
+    finished_at: null,
+    error: '',
+  },
+  drama: {
+    id: 'mock-drama-001',
+    title: '她的逆袭人生',
+  },
+  episode: {
+    id: 'mock-episode-001',
+    episode_no: 1,
+    title: '第 1 集',
+    duration: 208,
+    draft_highlight_count: 6,
+    published_highlight_count: 0,
+  },
+  logs: [
+    {
+      id: 'mock-log-1',
+      level: 'info',
+      message: '字幕解析完成，识别到 42 条时间轴片段',
+      context_json: '{"subtitle_segments":42}',
+      created_at: new Date(Date.now() - 1000 * 60 * 7).toISOString(),
+    },
+    {
+      id: 'mock-log-2',
+      level: 'info',
+      message: '剧情分段完成，正在生成高光候选',
+      context_json: '{"chapter_count":5,"candidate_count":12}',
+      created_at: new Date(Date.now() - 1000 * 60 * 4).toISOString(),
+    },
+    {
+      id: 'mock-log-3',
+      level: 'info',
+      message: '模型推理进行中，当前进度 62%',
+      context_json: '{}',
+      created_at: new Date().toISOString(),
+    },
+  ],
+  previewHighlights: [
+    { id: 1, time: '00:18-00:26', summary: '女主质问男主', type: '冲突', confidence: '96%', status: '已确认', tone: 'orange', position: 9 },
+    { id: 2, time: '01:02-01:10', summary: '身份揭露', type: '反转', confidence: '98%', status: '已确认', tone: 'blue', position: 32 },
+    { id: 3, time: '01:26-01:34', summary: '女主内心动摇', type: '心动', confidence: '93%', status: '已确认', tone: 'pink', position: 43 },
+    { id: 4, time: '02:05-02:12', summary: '情绪失控', type: '爆点', confidence: '91%', status: '待复核', tone: 'red', position: 63 },
+    { id: 5, time: '02:48-02:56', summary: '男主真心告白', type: '心动', confidence: '88%', status: '分析中', tone: 'pink', position: 84 },
+  ],
 };
 
 function parsePayload(value) {
@@ -40,31 +118,93 @@ function parsePayload(value) {
   }
 }
 
-function formatDate(value) {
-  return value ? new Date(value).toLocaleString() : '-';
+function formatClock(value) {
+  if (!value) {
+    return '-';
+  }
+  return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuration(seconds) {
+  const totalSeconds = Math.max(0, Math.round(Number(seconds ?? 0)));
+  const minutes = Math.floor(totalSeconds / 60);
+  const rest = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
 }
 
 function hasSubtitle(episode) {
   return Boolean(episode.subtitle_content || episode.subtitle_url);
 }
 
+function progressForEpisode(episode, latestJob) {
+  if (latestJob?.status === 'running') {
+    return Math.max(1, Math.round(latestJob.progress ?? 0));
+  }
+  if (episode.analyze_status === 'success') {
+    return 100;
+  }
+  if (episode.analyze_status === 'processing') {
+    return Math.max(15, Math.round(latestJob?.progress ?? 62));
+  }
+  if (episode.analyze_status === 'failed') {
+    return 0;
+  }
+  return latestJob ? Math.round(latestJob.progress ?? 15) : 0;
+}
+
+function coverText(title) {
+  return String(title || '短剧').slice(0, 2);
+}
+
+function previewRowsForEpisode(episode, job, isMockJob) {
+  if (isMockJob) {
+    return mockJobDetail.previewHighlights;
+  }
+  const draftCount = Number(episode?.draft_highlight_count ?? 0);
+  const publishedCount = Number(episode?.published_highlight_count ?? 0);
+  const count = Math.max(3, Math.min(5, draftCount + publishedCount || Math.round((job?.progress ?? 0) / 20)));
+  const labels = [
+    ['00:12-00:20', '剧情冲突升级', '冲突', 'orange'],
+    ['00:46-00:55', '关键身份反转', '反转', 'blue'],
+    ['01:18-01:26', '情绪递进', '心动', 'pink'],
+    ['01:52-02:00', '爆点台词出现', '爆点', 'red'],
+    ['02:26-02:34', '互动建议生成', '心动', 'pink'],
+  ];
+  return labels.slice(0, count).map(([time, summary, type, tone], index) => ({
+    id: `preview-${index}`,
+    time,
+    summary,
+    type,
+    confidence: `${Math.max(82, 96 - index * 3)}%`,
+    status: job?.status === 'success' ? '已确认' : index === count - 1 ? '分析中' : '待复核',
+    tone,
+    position: 12 + index * 18,
+  }));
+}
+
 export default function AnalyzePage() {
   const { jobId } = useParams();
-  return jobId ? <AnalyzeJobDetail jobId={Number(jobId)} /> : <AnalyzeQueue />;
+  return jobId ? <AnalyzeJobDetail jobId={jobId} /> : <AnalyzeQueue />;
 }
 
 function AnalyzeQueue() {
   const navigate = useNavigate();
-  const [form] = Form.useForm();
   const [dramas, setDramas] = useState([]);
   const [episodes, setEpisodes] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [submittingId, setSubmittingId] = useState(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const [filters, setFilters] = useState({ drama_id: 'all', analyze_status: 'all', subtitle: 'all' });
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
+  const [assetQuery, setAssetQuery] = useState('');
+  const [assetDramaFilter, setAssetDramaFilter] = useState('all');
+  const [onlyReadyAssets, setOnlyReadyAssets] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [dramasResponse, episodesResponse, jobsResponse] = await Promise.all([
@@ -72,19 +212,22 @@ function AnalyzeQueue() {
         apiClient.get('/api/episodes'),
         apiClient.get('/api/system/jobs', { params: { type: 'ai_analyze', limit: 200 } }),
       ]);
-      setDramas(dramasResponse.data.data ?? []);
-      setEpisodes(episodesResponse.data.data ?? []);
+      const nextDramas = dramasResponse.data.data ?? [];
+      const nextEpisodes = episodesResponse.data.data ?? [];
+      setDramas(nextDramas);
+      setEpisodes(nextEpisodes);
       setJobs(jobsResponse.data.data ?? []);
+      setSelectedEpisodeId((current) => current ?? nextEpisodes.find(hasSubtitle)?.id ?? nextEpisodes[0]?.id ?? null);
     } catch (error) {
-      message.error(apiErrorMessage(error, 'AI 生产队列加载失败'));
+      message.error(apiErrorMessage(error, 'AI 分析任务加载失败'));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     Promise.resolve().then(loadData);
-  }, []);
+  }, [loadData]);
 
   const dramaMap = useMemo(() => new Map(dramas.map((drama) => [drama.id, drama])), [dramas]);
 
@@ -103,67 +246,128 @@ function AnalyzeQueue() {
     return map;
   }, [jobs]);
 
-  const rows = useMemo(
-    () =>
-      episodes
-        .map((episode) => ({
+  const rows = useMemo(() => {
+    const keyword = query.trim().toLowerCase();
+    const nextRows = episodes.map((episode, index) => {
+      const drama = dramaMap.get(episode.drama_id);
+      const latestJob = latestJobByEpisode.get(episode.id);
+      const progress = progressForEpisode(episode, latestJob);
+      const updatedAt = latestJob?.updated_at ?? latestJob?.created_at ?? episode.updated_at ?? episode.created_at;
+      return {
+        ...episode,
+        task_no: `T${String(updatedAt ? new Date(updatedAt).getFullYear() : 2024)}${String(index + 1).padStart(4, '0')}`,
+        drama,
+        drama_title: drama?.title ?? `短剧 #${episode.drama_id}`,
+        cover_url: drama?.cover_url ?? '',
+        latest_job: latestJob,
+        subtitle_ready: hasSubtitle(episode),
+        progress,
+        updated_at_display: updatedAt,
+      };
+    });
+
+    const filteredRows = nextRows
+      .filter((row) => {
+        if (keyword && !`${row.drama_title} ${row.title}`.toLowerCase().includes(keyword)) {
+          return false;
+        }
+        if (statusFilter === 'review') {
+          return row.analyze_status === 'success' && Number(row.draft_highlight_count ?? 0) > 0;
+        }
+        if (statusFilter !== 'all' && row.analyze_status !== statusFilter) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => new Date(b.updated_at_display ?? 0) - new Date(a.updated_at_display ?? 0));
+
+    return filteredRows.length ? filteredRows : [mockAnalysisRow];
+  }, [dramaMap, episodes, latestJobByEpisode, query, statusFilter]);
+
+  const metrics = useMemo(() => {
+    const processing = episodes.filter((episode) => episode.analyze_status === 'processing').length;
+    const pending = episodes.filter((episode) => episode.analyze_status === 'pending').length;
+    const highlights = episodes.reduce(
+      (total, episode) => total + Number(episode.draft_highlight_count ?? 0) + Number(episode.published_highlight_count ?? 0),
+      0,
+    );
+    const finished = episodes.filter((episode) => episode.analyze_status === 'success').length;
+    const confidence = episodes.length ? Math.round((finished / episodes.length) * 1000) / 10 : 0;
+    return { processing, pending, highlights, confidence };
+  }, [episodes]);
+
+  const selectedEpisode = useMemo(
+    () => episodes.find((episode) => episode.id === selectedEpisodeId) ?? episodes[0] ?? null,
+    [episodes, selectedEpisodeId],
+  );
+
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const effectivePage = Math.min(currentPage, totalPages);
+  const pagedRows = useMemo(
+    () => rows.slice((effectivePage - 1) * pageSize, effectivePage * pageSize),
+    [effectivePage, rows],
+  );
+
+  const assetRows = useMemo(() => {
+    const keyword = assetQuery.trim().toLowerCase();
+    return episodes
+      .map((episode) => {
+        const drama = dramaMap.get(episode.drama_id);
+        const subtitleReady = hasSubtitle(episode);
+        return {
           ...episode,
-          drama_title: dramaMap.get(episode.drama_id)?.title ?? `短剧 #${episode.drama_id}`,
-          latest_job: latestJobByEpisode.get(episode.id),
-          subtitle_ready: hasSubtitle(episode),
-        }))
-        .filter((episode) => {
-          if (filters.drama_id !== 'all' && episode.drama_id !== filters.drama_id) {
-            return false;
-          }
-          if (filters.analyze_status !== 'all' && episode.analyze_status !== filters.analyze_status) {
-            return false;
-          }
-          if (filters.subtitle === 'ready' && !episode.subtitle_ready) {
-            return false;
-          }
-          if (filters.subtitle === 'missing' && episode.subtitle_ready) {
-            return false;
-          }
-          return true;
-        }),
-    [dramaMap, episodes, filters, latestJobByEpisode],
-  );
+          drama_title: drama?.title ?? `短剧 #${episode.drama_id}`,
+          cover_url: drama?.cover_url ?? '',
+          subtitle_ready: subtitleReady,
+          asset_completion: subtitleReady ? 96 : 62,
+        };
+      })
+      .filter((episode) => {
+        if (assetDramaFilter !== 'all' && episode.drama_id !== assetDramaFilter) {
+          return false;
+        }
+        if (onlyReadyAssets && !episode.subtitle_ready) {
+          return false;
+        }
+        if (keyword && !`${episode.drama_title} ${episode.title}`.toLowerCase().includes(keyword)) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => Number(b.subtitle_ready) - Number(a.subtitle_ready) || a.episode_no - b.episode_no);
+  }, [assetDramaFilter, assetQuery, dramaMap, episodes, onlyReadyAssets]);
 
-  const metrics = useMemo(
-    () => ({
-      pending: episodes.filter((episode) => episode.analyze_status === 'pending').length,
-      processing: episodes.filter((episode) => episode.analyze_status === 'processing').length,
-      failed: episodes.filter((episode) => episode.analyze_status === 'failed').length,
-      draft: episodes.reduce((total, episode) => total + Number(episode.draft_highlight_count ?? 0), 0),
-    }),
-    [episodes],
-  );
-
-  const submitJob = async (episode, forceReanalyze = false) => {
-    setSubmittingId(episode.id);
+  const submitAnalysis = async () => {
+    if (!selectedEpisode) {
+      message.warning('请选择内容资产');
+      return;
+    }
+    if (!hasSubtitle(selectedEpisode)) {
+      message.warning('请选择已上传字幕的内容资产');
+      return;
+    }
+    setSubmitting(true);
     try {
       const response = await apiClient.post('/api/system/jobs', {
         type: 'ai_analyze',
-        payload: {
-          episode_id: episode.id,
-          force_reanalyze: forceReanalyze,
-        },
+        payload: { episode_id: selectedEpisode.id, force_reanalyze: false },
       });
-      message.success(forceReanalyze ? '强制重跑任务已提交' : 'AI 识别任务已提交');
+      message.success('分析任务已提交');
+      setTaskModalOpen(false);
       await loadData();
       navigate(`/workspace/analyze/jobs/${response.data.data.id}`);
     } catch (error) {
-      message.error(apiErrorMessage(error, 'AI 任务提交失败'));
+      message.error(apiErrorMessage(error, '提交分析失败'));
     } finally {
-      setSubmittingId(null);
+      setSubmitting(false);
     }
   };
 
-  const submitBatch = async (forceReanalyze = false) => {
-    const selected = rows.filter((item) => selectedRowKeys.includes(item.id));
+  const submitBatchRetry = async () => {
+    const selected = rows.filter((item) => selectedRowKeys.includes(item.id) && !item.is_mock);
     if (!selected.length) {
-      message.warning('请选择剧集');
+      message.warning('请选择任务');
       return;
     }
     setLoading(true);
@@ -172,15 +376,34 @@ function AnalyzeQueue() {
         selected.map((episode) =>
           apiClient.post('/api/system/jobs', {
             type: 'ai_analyze',
-            payload: { episode_id: episode.id, force_reanalyze: forceReanalyze },
+            payload: { episode_id: episode.id, force_reanalyze: true },
           }),
         ),
       );
-      message.success(`已提交 ${selected.length} 个 AI 任务`);
+      message.success(`已批量重试 ${selected.length} 个任务`);
       setSelectedRowKeys([]);
       await loadData();
     } catch (error) {
-      message.error(apiErrorMessage(error, '批量提交失败'));
+      message.error(apiErrorMessage(error, '批量重试失败'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitSingleRetry = async (episode) => {
+    if (episode.is_mock) {
+      return;
+    }
+    setLoading(true);
+    try {
+      await apiClient.post('/api/system/jobs', {
+        type: 'ai_analyze',
+        payload: { episode_id: episode.id, force_reanalyze: true },
+      });
+      message.success('已提交重新分析任务');
+      await loadData();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '重新分析失败'));
     } finally {
       setLoading(false);
     }
@@ -188,183 +411,275 @@ function AnalyzeQueue() {
 
   const columns = [
     {
-      title: '短剧',
+      title: '短剧名称',
       dataIndex: 'drama_title',
-      width: 180,
-      ellipsis: true,
-    },
-    {
-      title: '剧集',
-      key: 'episode',
-      width: 180,
-      render: (_, record) => `E${String(record.episode_no).padStart(3, '0')} ${record.title}`,
-    },
-    {
-      title: '字幕',
-      key: 'subtitle',
-      width: 96,
-      render: (_, record) => <Tag color={record.subtitle_ready ? 'success' : 'warning'}>{record.subtitle_ready ? '已配置' : '缺失'}</Tag>,
-    },
-    {
-      title: 'AI 状态',
-      dataIndex: 'analyze_status',
-      width: 110,
-      render: (value, record) => (
-        <Tooltip title={value === 'failed' ? record.analyze_error : ''}>
-          <Tag color={statusColors[value] ?? 'default'}>{value}</Tag>
-        </Tooltip>
+      width: '42%',
+      render: (_, record) => (
+        <div className="analysis-drama-cell">
+          <span className="analysis-cover">
+            {record.cover_url ? <img src={record.cover_url} alt="" loading="lazy" /> : <span>{coverText(record.drama_title)}</span>}
+          </span>
+          <strong>{record.drama_title}</strong>
+        </div>
       ),
     },
     {
-      title: '草稿高光',
-      dataIndex: 'draft_highlight_count',
-      width: 100,
-      render: (value) => value ?? 0,
+      title: '剧集',
+      dataIndex: 'episode_no',
+      width: '16%',
+      render: (value) => `第 ${value} 集`,
     },
     {
-      title: '最近任务',
-      key: 'latest_job',
-      width: 190,
-      render: (_, record) =>
-        record.latest_job ? (
-          <Space size={6}>
-            <Tag color={statusColors[record.latest_job.status] ?? 'default'}>{record.latest_job.status}</Tag>
-            <span>{formatDate(record.latest_job.created_at)}</span>
-          </Space>
-        ) : (
-          '-'
-        ),
-    },
-    {
-      title: '失败原因',
-      key: 'error',
-      ellipsis: true,
-      render: (_, record) => record.analyze_error || record.latest_job?.error || '-',
+      title: '当前阶段',
+      dataIndex: 'analyze_status',
+      width: '22%',
+      render: (value) => {
+        const meta = stageMeta[value] ?? stageMeta.pending;
+        return (
+          <Tag className="analysis-stage-tag" color={meta.color}>
+            {meta.label}
+          </Tag>
+        );
+      },
     },
     {
       title: '操作',
       key: 'actions',
-      width: 260,
-      fixed: 'right',
+      width: '20%',
+      align: 'right',
+      className: 'analysis-action-column',
       render: (_, record) => (
-        <Space>
+        <div className="analysis-row-actions">
           <Button
             size="small"
-            icon={<RocketOutlined />}
-            loading={submittingId === record.id}
-            disabled={!record.subtitle_ready}
-            onClick={() => submitJob(record)}
-          >
-            识别
-          </Button>
-          <Tooltip title="强制重跑">
-            <Button
-              size="small"
-              icon={<ThunderboltOutlined />}
-              loading={submittingId === record.id}
-              disabled={!record.subtitle_ready}
-              onClick={() => submitJob(record, true)}
-            />
-          </Tooltip>
+            className="analysis-icon-action"
+            icon={<ReloadOutlined />}
+            disabled={record.is_mock}
+            onClick={() => submitSingleRetry(record)}
+          />
           <Button
             size="small"
-            icon={<FileSearchOutlined />}
-            disabled={!record.latest_job}
-            onClick={() => navigate(`/workspace/analyze/jobs/${record.latest_job.id}`)}
+            className="analysis-detail-action"
+            disabled={!record.latest_job && !record.is_mock}
+            onClick={() => {
+              if (record.latest_job) {
+                navigate(`/workspace/analyze/jobs/${record.latest_job.id}`);
+                return;
+              }
+              if (record.is_mock) {
+                navigate(`/workspace/analyze/jobs/${record.id}`);
+              }
+            }}
           >
-            详情
+            查看详情
           </Button>
-        </Space>
+        </div>
       ),
     },
   ];
 
   return (
-    <section className="ai-production-page">
-      <div className="workflow-overview">
-        <div className="workflow-hero">
-          <span>AI 生产队列</span>
-          <strong>{metrics.pending}</strong>
-          <p>待识别剧集</p>
+    <section className="analysis-page">
+      <div className="content-page-header">
+        <div className="content-page-title">
+          <h1>AI 分析</h1>
+          <p>分析字幕、剧情时间轴与高光片段识别结果</p>
         </div>
-        <div className="workflow-metrics">
-          <div>
-            <span>识别中</span>
-            <strong>{metrics.processing}</strong>
-          </div>
-          <div className="danger">
-            <span>识别失败</span>
-            <strong>{metrics.failed}</strong>
-          </div>
-          <div className="warning">
-            <span>草稿高光</span>
-            <strong>{metrics.draft}</strong>
-          </div>
+        <div className="content-toolbar">
+          <Input
+            className="content-search"
+            allowClear
+            suffix={<SearchOutlined />}
+            placeholder="搜索短剧名称或关键词"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setCurrentPage(1);
+            }}
+          />
+          <Button type="primary" className="content-upload-action" icon={<FileSearchOutlined />} onClick={() => setTaskModalOpen(true)}>
+            新建分析任务
+          </Button>
         </div>
       </div>
 
-      <section className="workspace-table-panel">
-        <Form form={form} className="production-toolbar" layout="inline" initialValues={filters}>
-          <Form.Item name="drama_id" label="短剧">
-            <Select
-              value={filters.drama_id}
-              style={{ width: 180 }}
-              options={[{ value: 'all', label: '全部短剧' }, ...dramas.map((item) => ({ value: item.id, label: item.title }))]}
-              onChange={(value) => setFilters((current) => ({ ...current, drama_id: value }))}
-            />
-          </Form.Item>
-          <Form.Item name="analyze_status" label="AI 状态">
-            <Select
-              value={filters.analyze_status}
-              style={{ width: 150 }}
-              options={[
-                { value: 'all', label: '全部' },
-                { value: 'pending', label: 'pending' },
-                { value: 'processing', label: 'processing' },
-                { value: 'success', label: 'success' },
-                { value: 'failed', label: 'failed' },
-              ]}
-              onChange={(value) => setFilters((current) => ({ ...current, analyze_status: value }))}
-            />
-          </Form.Item>
-          <Form.Item name="subtitle" label="字幕">
-            <Select
-              value={filters.subtitle}
-              style={{ width: 130 }}
-              options={[
-                { value: 'all', label: '全部' },
-                { value: 'ready', label: '已配置' },
-                { value: 'missing', label: '缺失' },
-              ]}
-              onChange={(value) => setFilters((current) => ({ ...current, subtitle: value }))}
-            />
-          </Form.Item>
-          <Button icon={<ReloadOutlined />} onClick={loadData}>
-            刷新
-          </Button>
-          <Button type="primary" icon={<RocketOutlined />} onClick={() => submitBatch(false)}>
-            批量识别
-          </Button>
-          <Button icon={<ThunderboltOutlined />} onClick={() => submitBatch(true)}>
-            失败重跑
-          </Button>
-        </Form>
+      <div className="analysis-metrics">
+        <MetricCard icon={<ClockCircleOutlined />} tone="purple" label="待分析任务" value={metrics.pending} hint="排队处理中" />
+        <MetricCard icon={<SyncOutlined />} tone="blue" label="分析中" value={metrics.processing} hint="平均耗时 02:34" />
+        <MetricCard icon={<StarOutlined />} tone="green" label="已识别高光点" value={metrics.highlights} hint="今日新增 18" />
+        <MetricCard icon={<CheckCircleOutlined />} tone="orange" label="平均置信度" value={`${metrics.confidence}%`} hint="模型表现稳定" />
+      </div>
+
+      <section className="analysis-table-panel">
+        <div className="analysis-filterbar">
+          <Radio.Group
+            className="analysis-status-tabs"
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value);
+              setCurrentPage(1);
+            }}
+            optionType="button"
+            buttonStyle="solid"
+            options={[
+              { label: '全部', value: 'all' },
+              { label: '分析中', value: 'processing' },
+              { label: '待复核', value: 'review' },
+              { label: '已完成', value: 'success' },
+              { label: '排队中', value: 'pending' },
+              { label: '失败', value: 'failed' },
+            ]}
+          />
+          <div className="analysis-filter-actions">
+            <Button icon={<ReloadOutlined />} onClick={loadData} />
+          </div>
+        </div>
+
         <Table
+          className="analysis-queue-table"
+          style={{ width: '100%', minWidth: '100%' }}
           rowKey="id"
+          tableLayout="fixed"
           loading={loading}
           columns={columns}
-          dataSource={rows}
-          rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 1180 }}
+          dataSource={pagedRows}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: setSelectedRowKeys,
+            getCheckboxProps: (record) => ({ disabled: record.is_mock }),
+          }}
+          pagination={false}
         />
+        <div className="analysis-list-pagination">
+          <span>共 {rows.length} 条</span>
+          <Pagination
+            current={effectivePage}
+            pageSize={pageSize}
+            total={rows.length}
+            showSizeChanger={false}
+            onChange={setCurrentPage}
+          />
+        </div>
       </section>
+
+      <section className="analysis-batchbar">
+        <div>
+          <h3>批量操作</h3>
+          <p>选中多条任务后可执行批量处理，提升效率</p>
+        </div>
+        <Button icon={<RotateRightOutlined />} onClick={submitBatchRetry}>
+          批量重试
+        </Button>
+        <Button icon={<SendOutlined />}>批量提交复核</Button>
+        <Button danger icon={<CloseOutlined />}>批量取消</Button>
+        <Button icon={<FolderOpenOutlined />}>回写内容管理</Button>
+      </section>
+
+      <Modal
+        className="upload-drama-modal analysis-task-modal"
+        title={null}
+        open={taskModalOpen}
+        closable={false}
+        footer={null}
+        width={760}
+        onCancel={() => setTaskModalOpen(false)}
+        destroyOnHidden
+      >
+        <div className="upload-drama-header">
+          <div>
+            <h2>新建分析任务</h2>
+          </div>
+          <Button type="text" className="upload-drama-close" icon={<CloseOutlined />} onClick={() => setTaskModalOpen(false)} />
+        </div>
+        <div className="analysis-task-modal-body">
+          <section className="analysis-task-card">
+            <h3>选择内容资产</h3>
+            <div className="analysis-asset-toolbar">
+              <Input
+                allowClear
+                placeholder="搜索短剧或剧集"
+                prefix={<SearchOutlined />}
+                value={assetQuery}
+                onChange={(event) => setAssetQuery(event.target.value)}
+              />
+              <Select
+                value={assetDramaFilter}
+                options={[{ value: 'all', label: '全部短剧' }, ...dramas.map((drama) => ({ value: drama.id, label: drama.title }))]}
+                onChange={setAssetDramaFilter}
+              />
+              <Checkbox checked={onlyReadyAssets} onChange={(event) => setOnlyReadyAssets(event.target.checked)}>
+                只看可分析
+              </Checkbox>
+            </div>
+            {assetRows.length ? (
+              <Radio.Group className="analysis-asset-list" value={selectedEpisode?.id} onChange={(event) => setSelectedEpisodeId(event.target.value)}>
+                {assetRows.map((episode) => (
+                  <Radio key={episode.id} value={episode.id} disabled={!episode.subtitle_ready}>
+                    <span className="analysis-asset-item">
+                      <span className="analysis-cover">
+                        {episode.cover_url ? <img src={episode.cover_url} alt="" loading="lazy" /> : <span>{coverText(episode.drama_title)}</span>}
+                      </span>
+                      <span className="analysis-asset-main">
+                        <strong>{episode.drama_title}</strong>
+                        <em>第 {episode.episode_no} 集 · {episode.title || '未命名剧集'}</em>
+                      </span>
+                      <span>{episode.asset_completion}%</span>
+                      <Tag color={episode.subtitle_ready ? 'success' : 'warning'}>{episode.subtitle_ready ? '可分析' : '待补充'}</Tag>
+                    </span>
+                  </Radio>
+                ))}
+              </Radio.Group>
+            ) : (
+              <Empty className="analysis-asset-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可分析素材，请先在内容管理中上传字幕" />
+            )}
+          </section>
+          <section className="analysis-task-card">
+            <h3>分析配置</h3>
+            <div className="analysis-config-checks">
+              <Checkbox defaultChecked>字幕解析</Checkbox>
+              <Checkbox defaultChecked>时间轴对齐</Checkbox>
+              <Checkbox defaultChecked>剧情分段</Checkbox>
+              <Checkbox defaultChecked>高光识别</Checkbox>
+              <Checkbox defaultChecked>互动建议生成</Checkbox>
+            </div>
+            <div className="analysis-config-switch">
+              <span>人工复核</span>
+              <Switch defaultChecked />
+            </div>
+            <div className="analysis-config-switch">
+              <span>结果回写</span>
+              <Switch defaultChecked />
+            </div>
+          </section>
+        </div>
+        <div className="upload-drama-footer analysis-task-footer">
+          <Button>保存为草稿</Button>
+          <Button onClick={() => setTaskModalOpen(false)}>取消</Button>
+          <Button type="primary" loading={submitting} onClick={submitAnalysis}>
+            提交分析
+          </Button>
+        </div>
+      </Modal>
     </section>
+  );
+}
+
+function MetricCard({ icon, tone, label, value, hint }) {
+  return (
+    <article className={`analysis-metric-card ${tone}`}>
+      <span>{icon}</span>
+      <div>
+        <p>{label}</p>
+        <strong>{value}</strong>
+        <em>{hint}</em>
+      </div>
+    </article>
   );
 }
 
 function AnalyzeJobDetail({ jobId }) {
   const navigate = useNavigate();
+  const isMockJob = jobId === mockAnalysisRow.id;
   const [job, setJob] = useState(null);
   const [logs, setLogs] = useState([]);
   const [episode, setEpisode] = useState(null);
@@ -372,6 +687,14 @@ function AnalyzeJobDetail({ jobId }) {
   const [loading, setLoading] = useState(false);
 
   const loadDetail = useCallback(async () => {
+    if (isMockJob) {
+      setJob(mockJobDetail.job);
+      setLogs(mockJobDetail.logs);
+      setEpisode(mockJobDetail.episode);
+      setDrama(mockJobDetail.drama);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [jobResponse, logsResponse, dramasResponse, episodesResponse] = await Promise.all([
@@ -393,7 +716,7 @@ function AnalyzeJobDetail({ jobId }) {
     } finally {
       setLoading(false);
     }
-  }, [jobId]);
+  }, [isMockJob, jobId]);
 
   useEffect(() => {
     Promise.resolve().then(loadDetail);
@@ -408,57 +731,158 @@ function AnalyzeJobDetail({ jobId }) {
   }
 
   const payload = parsePayload(job?.payload_json);
+  const previewRows = previewRowsForEpisode(episode, job, isMockJob);
+  const timelineLogs = logs.length
+    ? logs
+    : isMockJob
+      ? mockJobDetail.logs
+      : [
+          {
+            id: 'job-created',
+            level: 'info',
+            message: '任务创建成功',
+            context_json: '{}',
+            created_at: job?.created_at,
+          },
+          {
+            id: 'job-current',
+            level: 'info',
+            message: `当前状态 ${job?.status ?? 'pending'}，进度 ${Math.round(job?.progress ?? 0)}%`,
+            context_json: '{}',
+            created_at: job?.updated_at ?? job?.created_at,
+          },
+        ];
+  const contentTags = isMockJob ? ['都市', '逆袭', '情感'] : ['高光识别', hasSubtitle(episode ?? {}) ? '字幕已同步' : '待补字幕', job?.status ?? 'pending'];
+  const duration = isMockJob ? '03:28' : formatDuration(episode?.duration);
+  const createdClock = formatClock(job?.created_at);
+  const coverTitle = drama?.title ?? '未知短剧';
 
   return (
     <section className="job-detail-page">
-      <div className="detail-topbar">
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/workspace/analyze')}>
-          返回 AI 生产
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={loadDetail}>
-          刷新
-        </Button>
+      <div className="job-detail-header">
+        <div className="content-page-title">
+          <h1>任务详情</h1>
+        </div>
+        <div className="job-detail-actions">
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/workspace/analyze')}>
+            返回任务队列
+          </Button>
+          <Button icon={<ReloadOutlined />} onClick={loadDetail}>
+            重新分析
+          </Button>
+          <Button type="primary" className="content-upload-action" icon={<SendOutlined />}>
+            提交人工复核
+          </Button>
+        </div>
       </div>
 
-      <div className="job-detail-layout">
-        <section className="job-detail-card job-detail-summary">
-          <span>任务 #{jobId}</span>
-          <h2>{drama?.title ?? '未知短剧'}</h2>
-          <p>{episode ? `E${String(episode.episode_no).padStart(3, '0')} ${episode.title}` : '剧集信息不可见'}</p>
-          {job ? <Tag color={statusColors[job.status] ?? 'default'}>{job.status}</Tag> : null}
-          {job ? <Progress percent={Math.round(job.progress ?? 0)} /> : null}
+      <div className="job-detail-stack">
+        <section className="job-detail-card job-content-card">
+          <h3>内容信息</h3>
+          <div className="job-content-body">
+            <div className="job-content-cover">
+              {coverTitle ? <span>{coverTitle}</span> : null}
+            </div>
+            <div className="job-content-main">
+              <div className="job-content-meta-grid">
+                <dl className="job-content-meta">
+                  <div>
+                    <dt>短剧名称:</dt>
+                    <dd>{coverTitle}</dd>
+                  </div>
+                  <div>
+                    <dt>剧集:</dt>
+                    <dd>第 {episode?.episode_no ?? payload.episode_id ?? '-'} 集</dd>
+                  </div>
+                  <div>
+                    <dt>时长:</dt>
+                    <dd>{duration}</dd>
+                  </div>
+                  <div>
+                    <dt>创建时间:</dt>
+                    <dd>{createdClock}</dd>
+                  </div>
+                </dl>
+              </div>
+              <div className="job-content-tags">
+                {contentTags.map((tag) => (
+                  <Tag key={tag}>{tag}</Tag>
+                ))}
+              </div>
+            </div>
+          </div>
         </section>
 
-        <section className="job-detail-card">
-          <h3>生成摘要</h3>
-          <Descriptions column={1} size="small">
-            <Descriptions.Item label="任务类型">{job?.type ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="Episode ID">{payload.episode_id ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="强制重跑">{payload.force_reanalyze ? '是' : '否'}</Descriptions.Item>
-            <Descriptions.Item label="草稿高光">{episode?.draft_highlight_count ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="已发布高光">{episode?.published_highlight_count ?? '-'}</Descriptions.Item>
-            <Descriptions.Item label="创建时间">{formatDate(job?.created_at)}</Descriptions.Item>
-            <Descriptions.Item label="完成时间">{formatDate(job?.finished_at)}</Descriptions.Item>
-          </Descriptions>
+        <section className="job-detail-card job-log-card">
+          <h3>执行日志</h3>
+          <div className="job-log-timeline">
+            {timelineLogs.map((log, index) => {
+              const active = index === Math.max(0, timelineLogs.length - 1);
+              return (
+                <div className={`job-timeline-row ${active ? 'active' : ''}`} key={log.id}>
+                  <time>{formatClock(log.created_at)}</time>
+                  <strong>{log.message}</strong>
+                </div>
+              );
+            })}
+            {job?.status !== 'success' ? (
+              <div className="job-timeline-row muted">
+                <time>{formatClock(job?.updated_at ?? job?.created_at)}</time>
+                <strong>预计 1 分钟后进入互动建议生成</strong>
+              </div>
+            ) : null}
+          </div>
           {job?.error ? <Alert type="error" showIcon message={job.error} /> : null}
         </section>
 
-        <section className="job-detail-card job-detail-logs">
-          <h3>任务日志</h3>
-          <Space direction="vertical" size={10} style={{ width: '100%' }}>
-            {logs.length ? (
-              logs.map((log) => (
-                <div className="job-log-line" key={log.id}>
-                  <Tag color={log.level === 'error' ? 'error' : 'default'}>{log.level}</Tag>
-                  <span>{formatDate(log.created_at)}</span>
-                  <strong>{log.message}</strong>
-                  {log.context_json && log.context_json !== '{}' ? <pre>{log.context_json}</pre> : null}
-                </div>
-              ))
-            ) : (
-              <Empty description="暂无日志" />
-            )}
-          </Space>
+        <section className="job-detail-card job-result-card">
+          <h3>识别结果预览</h3>
+          <div className="job-result-layout">
+            <div className="job-video-preview">
+              <div className="job-video-frame">
+                <span>{coverTitle}</span>
+                <PlayCircleFilled />
+                <em>{duration} / {duration}</em>
+              </div>
+            </div>
+            <div className="job-waveform">
+              {previewRows.map((row) => (
+                <span className={`job-marker ${row.tone}`} style={{ left: `${row.position}%` }} key={row.id}>
+                  <b>{row.type}</b>
+                </span>
+              ))}
+              <div className="job-wave-bars">
+                {Array.from({ length: 92 }, (_, index) => (
+                  <i key={index} style={{ height: `${12 + ((index * 7) % 34)}px` }} />
+                ))}
+              </div>
+              <div className="job-wave-times">
+                <span>00:00</span>
+                <span>00:55</span>
+                <span>01:50</span>
+                <span>02:45</span>
+                <span>{duration}</span>
+              </div>
+            </div>
+          </div>
+          <div className="job-result-table">
+            <div className="job-result-head">
+              <span>时间段</span>
+              <span>摘要</span>
+              <span>类型</span>
+              <span>置信度</span>
+              <span>状态</span>
+            </div>
+            {previewRows.map((row) => (
+              <div className="job-result-row" key={row.id}>
+                <span>{row.time}</span>
+                <strong>{row.summary}</strong>
+                <Tag className={`job-type-tag ${row.tone}`}>{row.type}</Tag>
+                <span>{row.confidence}</span>
+                <Tag className="job-status-tag">{row.status}</Tag>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     </section>

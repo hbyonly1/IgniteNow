@@ -6,7 +6,6 @@ import AnalyzePage from './pages/workspace/AnalyzePage.jsx';
 import DashboardPage from './pages/workspace/DashboardPage.jsx';
 import DramasPage from './pages/workspace/DramasPage.jsx';
 import HighlightsPage from './pages/workspace/HighlightsPage.jsx';
-import JobsPage from './pages/workspace/JobsPage.jsx';
 import SettingsPage from './pages/workspace/SettingsPage.jsx';
 import { getAdminUserRole, hasAdminAccessToken } from './auth.js';
 import {
@@ -91,14 +90,6 @@ function App() {
           element={
             <RequireWorkspaceRole moduleId="highlights">
               <HighlightsPage />
-            </RequireWorkspaceRole>
-          }
-        />
-        <Route
-          path="jobs"
-          element={
-            <RequireWorkspaceRole moduleId="jobs">
-              <JobsPage />
             </RequireWorkspaceRole>
           }
         />

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Avatar, Button, Dropdown, Layout, Menu, Typography } from 'antd';
+import { Avatar, Button, Dropdown, Layout, Menu } from 'antd';
 import { DoubleLeftOutlined, DoubleRightOutlined, LogoutOutlined } from '@ant-design/icons';
 import {
   getWorkspaceModuleByPath,
@@ -9,8 +9,7 @@ import {
 import { clearAdminSession, getAdminUserName, getAdminUserRole } from '../auth.js';
 import { logoutAdmin } from '../services/authApi.js';
 
-const { Header, Sider, Content } = Layout;
-const { Title } = Typography;
+const { Sider, Content } = Layout;
 
 export default function WorkspaceLayout() {
   const location = useLocation();
@@ -100,14 +99,8 @@ export default function WorkspaceLayout() {
           </Button>
         </div>
       </Sider>
-      <Layout className="workspace-main">
-        <Header className="workspace-header">
-          <div className="workspace-title-block">
-            <Title level={4}>{currentModule.title}</Title>
-            <p>{currentModule.description}</p>
-          </div>
-        </Header>
-        <Content className="workspace-content">
+      <Layout className="workspace-main workspace-main-plain">
+        <Content className="workspace-content workspace-content-plain">
           <Outlet />
         </Content>
       </Layout>
