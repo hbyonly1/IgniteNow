@@ -1,8 +1,26 @@
+import json
+
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from backend.app.config import settings
-from backend.app.models import Episode, UserAccount
+from backend.app.models import Episode, Job, UserAccount
+from backend.app.routers import system
 from backend.app.services.auth_service import hash_password
+
+
+def _fake_create_and_enqueue_job(db: Session, job_type: str, payload: dict) -> Job:
+    job = Job(
+        type=job_type,
+        payload_json=json.dumps(payload),
+        status="pending",
+        progress=0,
+        rq_job_id="rq-test",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
 
 
 def test_workspace_reads_require_login(client: TestClient, demo_episode: Episode) -> None:
@@ -26,22 +44,25 @@ def test_uploader_jwt_can_access_workspace_reads_and_analysis(
     db_session,
     demo_episode: Episode,
     uploader_headers: dict[str, str],
+    monkeypatch,
 ) -> None:
     uploader = db_session.query(UserAccount).filter(UserAccount.username == "uploader-user").one()
     demo_episode.owner_user_id = uploader.id
     db_session.commit()
+    monkeypatch.setattr(system, "create_and_enqueue_job", _fake_create_and_enqueue_job)
 
     assert client.get("/api/dramas", headers=uploader_headers).status_code == 200
     assert client.get("/api/episodes", headers=uploader_headers).status_code == 200
 
     response = client.post(
-        f"/api/episodes/{demo_episode.id}/analyze",
+        "/api/system/jobs",
         headers=uploader_headers,
-        json={"force_reanalyze": False},
+        json={"type": "ai_analyze", "payload": {"episode_id": demo_episode.id, "force_reanalyze": False}},
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "subtitle is required"
+    assert response.status_code == 200
+    assert response.json()["data"]["type"] == "ai_analyze"
+    assert response.json()["data"]["rq_job_id"] == "rq-test"
 
 
 def test_uploader_only_sees_owned_content(
@@ -52,9 +73,9 @@ def test_uploader_only_sees_owned_content(
     dramas_response = client.get("/api/dramas", headers=uploader_headers)
     episodes_response = client.get("/api/episodes", headers=uploader_headers)
     analyze_response = client.post(
-        f"/api/episodes/{demo_episode.id}/analyze",
+        "/api/system/jobs",
         headers=uploader_headers,
-        json={"force_reanalyze": False},
+        json={"type": "ai_analyze", "payload": {"episode_id": demo_episode.id, "force_reanalyze": False}},
     )
 
     assert dramas_response.status_code == 200

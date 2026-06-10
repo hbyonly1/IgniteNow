@@ -58,7 +58,7 @@
 | P0-BE-02 | 建立数据库连接与模型 | SQLAlchemy models | 能连接 MySQL 并创建/查询核心实体 |
 | P0-BE-03 | 实现短剧 API | `/api/dramas` | 支持创建和列表查询 |
 | P0-BE-04 | 实现剧集 API | `/api/episodes` | 支持创建、列表查询、绑定字幕/视频地址 |
-| P0-BE-05 | 实现 AI 分析入口 | `POST /api/episodes/{episode_id}/analyze` | 可调用 AI 服务并写入 draft 高光 |
+| P0-BE-05 | 实现 AI 分析入口 | `POST /api/system/jobs` 创建 `ai_analyze` 异步任务 | worker 可调用 AI 服务并写入 draft 高光 |
 | P0-BE-06 | 实现高光管理 API | `/api/episodes/{id}/highlights`、`/api/highlights/{id}` | 支持查询、编辑、删除/驳回 |
 | P0-BE-07 | 实现发布 API | `POST /api/episodes/{id}/highlights/publish` | draft 高光可变为 published |
 | P0-BE-08 | 实现播放端下发 API | `GET /api/player/episodes/{episode_id}` | 只返回 published 高光，不暴露 reason/confidence/status |

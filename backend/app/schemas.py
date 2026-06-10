@@ -8,7 +8,7 @@ HIGHLIGHT_TYPES = {"conflict", "reversal", "sweet", "satisfying", "suspense"}
 HIGHLIGHT_STATUSES = {"draft", "published", "rejected", "archived"}
 ACTION_TYPES = {"impression", "click", "ignore"}
 EFFECTS = {"anger_bar", "screen_flash", "heart_rain", "boom_effect", "countdown"}
-JOB_TYPES = {"ai_analyze", "ocr_import", "verify_demo_chain"}
+JOB_TYPES = {"ai_analyze", "ocr_import"}
 JOB_STATUSES = {"pending", "running", "success", "failed", "canceled"}
 
 
@@ -69,10 +69,6 @@ class EpisodeOut(EpisodeCreate):
     published_highlight_count: int = 0
     rejected_highlight_count: int = 0
     archived_highlight_count: int = 0
-
-
-class AnalyzeRequest(BaseModel):
-    force_reanalyze: bool = False
 
 
 class JobCreate(BaseModel):

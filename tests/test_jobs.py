@@ -15,6 +15,17 @@ def test_create_ai_analyze_job_requires_existing_episode(client, admin_headers):
     assert response.json()["detail"] == "episode not found"
 
 
+def test_verify_demo_chain_is_not_a_system_job_type(client, admin_headers):
+    response = client.post(
+        "/api/system/jobs",
+        headers=admin_headers,
+        json={"type": "verify_demo_chain", "payload": {}},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "unsupported job type"
+
+
 def test_create_ai_analyze_job_records_status(
     client,
     db_session: Session,

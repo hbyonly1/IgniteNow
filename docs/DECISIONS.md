@@ -1,5 +1,14 @@
 # 技术决策记录
 
+## 2026-06-10 后端与 Android 衔接方案确认
+
+- AI 分析列表确定使用 `GET /api/analysis/queue` 聚合接口，后端统一返回 episode、drama、素材状态和最新任务信息；任务创建、重试、详情与日志仍由 `/api/system/jobs` 相关接口负责。
+- 管理后台视频上传确定使用 `ffprobe` 自动解析视频元数据，部署环境必须包含 FFmpeg/ffprobe。
+- `user_interaction_log` 后续增加 `play_session_id`，Android 每次进入播放页生成 UUID，并在 impression、click、ignore 回传中复用。
+- 移动端内容上传链路确定删除，包括 `POST /api/uploads/episodes`、上传页面和入口；Android 只保留播放端 API 与互动回传 API。
+- `verify_demo_chain` 从系统任务枚举删除，同名脚本继续作为命令行交付验收工具；`ocr_import` 暂保留为未实现的预留任务类型，不在 UI 暴露。
+- AI 分析触发统一收口到异步任务：删除同步 `POST /api/episodes/{episode_id}/analyze`，管理后台和 uploader 只能通过 `POST /api/system/jobs` 创建 `ai_analyze` 任务，worker 负责实际分析、失败落库和任务日志。
+
 ## 2026-05-30 内容管理合并与剧集归属
 
 - 将工作台中的“短剧管理”和“剧集配置”合并为一个“内容管理”入口，删除独立 `/workspace/episodes` 路由，避免运营人员在两个高度相关页面之间反复切换。
@@ -116,8 +125,8 @@
 
 - 后台任务采用 RQ + Redis，不在 FastAPI 请求线程里执行耗时任务；`REDIS_URL` 和 `RQ_QUEUE_NAME` 通过环境变量配置。
 - 数据库新增 `job` 和 `job_log` 作为业务状态镜像，后台页面只读数据库状态和日志，不直接依赖 Redis 队列内部结构。
-- 第一版先接入 `ai_analyze` 任务，保留原同步 `POST /api/episodes/{episode_id}/analyze` 以兼容已有调用；后台任务页通过 `POST /api/system/jobs` 创建异步任务。
-- `ocr_import` 和 `verify_demo_chain` 作为任务类型预留，但暂不在本轮实现执行器，避免一次性改动脚本、演示验收和字幕导入链路。
+- 第一版先接入 `ai_analyze` 任务；原同步 `POST /api/episodes/{episode_id}/analyze` 已在 2026-06-10 后续决策中删除，后台任务页通过 `POST /api/system/jobs` 创建异步任务。
+- 当时将 `ocr_import` 和 `verify_demo_chain` 作为任务类型预留，未实现执行器；`verify_demo_chain` 已在 2026-06-10 后续决策中从系统任务枚举删除，命令行验收脚本仍保留。
 - `bootstrap_admin.py` 仍保留 CLI 冷启动方式，因为创建第一个管理员发生在无法登录后台之前，不适合作为需要登录的后台任务。
 
 ## 2026-05-28 结构化系统日志

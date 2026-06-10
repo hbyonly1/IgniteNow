@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Drama, Episode, HighlightEvent
 from ..schemas import (
-    AnalyzeRequest,
     DramaCreate,
     DramaOut,
     DramaUpdate,
@@ -19,7 +18,6 @@ from ..schemas import (
     HighlightUpdate,
 )
 from ..services.auth_service import ADMIN_ROLE, UPLOADER_ROLE
-from ..services.analysis_service import analyze_episode_highlights
 from ..services.highlight_service import (
     apply_highlight_update,
     assert_no_published_overlap,
@@ -174,32 +172,6 @@ def update_episode(episode_id: int, payload: EpisodeUpdate, user=Depends(require
     db.commit()
     db.refresh(episode)
     return ok(_episode_out(db, episode), "episode updated")
-
-
-@router.post("/episodes/{episode_id}/analyze")
-def analyze_episode(episode_id: int, payload: Optional[AnalyzeRequest] = None, user=Depends(require_workspace_user), db: Session = Depends(get_db)):
-    payload = payload or AnalyzeRequest()
-    episode = db.get(Episode, episode_id)
-    if not episode:
-        raise HTTPException(status_code=404, detail="episode not found")
-    if not _can_access_episode(user, episode):
-        raise HTTPException(status_code=403, detail="episode is not owned by current uploader")
-    if episode.analyze_status == "processing":
-        raise HTTPException(status_code=409, detail="episode is already processing")
-    if not (episode.subtitle_content or episode.subtitle_url):
-        episode.analyze_status = "failed"
-        episode.analyze_error = "subtitle is required"
-        db.commit()
-        raise HTTPException(status_code=400, detail="subtitle is required")
-
-    existing = db.query(HighlightEvent).filter(HighlightEvent.episode_id == episode_id).count()
-    if existing and episode.analyze_status == "success" and not payload.force_reanalyze:
-        return ok({"highlight_count": existing}, "existing highlights returned")
-
-    try:
-        return ok(analyze_episode_highlights(db, episode, payload.force_reanalyze), "analysis completed")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/episodes/{episode_id}/highlights", dependencies=[Depends(require_admin)])

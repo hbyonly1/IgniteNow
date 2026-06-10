@@ -254,36 +254,15 @@ Content-Type: multipart/form-data
 }
 ```
 
-### `POST /api/episodes/{episode_id}/analyze`
+### AI 分析触发方式
 
-触发 AI 高光识别。需要 `admin` 或 `uploader` Bearer token。
+AI 高光识别只允许通过系统任务异步触发，不再提供同步 HTTP 分析接口。旧 `POST /api/episodes/{episode_id}/analyze` 已删除，管理后台和 uploader 都必须使用 `POST /api/system/jobs` 创建 `ai_analyze` 任务。
 
-```json
-{
-  "force_reanalyze": false
-}
-```
-
-规则：`admin` 可分析任意剧集，`uploader` 只能分析自己名下剧集；`processing` 时拒绝重复分析；`success` 且 `force_reanalyze=false` 时返回已有数量；`force_reanalyze=true` 时重建高光。
-
-AI 高光识别默认逻辑：存在 `LLM_API_KEY` 时优先调用大模型；未配置或调用失败时使用本地关键词 fallback，保证演示链路可恢复。
-
-响应 `data`：
-
-```json
-{
-  "highlight_count": 3,
-  "provider": "llm",
-  "llm_error": "",
-  "invalid_count": 0
-}
-```
-
-该接口保留同步分析语义，便于兼容已有调用。后台任务页应优先使用 `POST /api/system/jobs` 创建 RQ 异步任务。
+AI 高光识别默认逻辑：存在 `LLM_API_KEY` 时优先调用大模型；未配置或调用失败时使用本地关键词 fallback，保证演示链路可恢复。任务执行成功后会写入 `draft` 高光；执行失败时会写入 `job.error`，并按失败原因更新 `episode.analyze_status` / `episode.analyze_error`。
 
 ## 系统任务 API
 
-系统任务使用 RQ + Redis 执行，`job` / `job_log` 表保存后台可查询的业务状态与任务日志。第一版已接入 `ai_analyze`，`ocr_import` 和 `verify_demo_chain` 作为后续任务类型预留。
+系统任务使用 RQ + Redis 执行，`job` / `job_log` 表保存后台可查询的业务状态与任务日志。第一版已接入 `ai_analyze`，`ocr_import` 作为后续任务类型预留。`verify_demo_chain` 不属于业务任务类型，演示链路验收继续通过 `backend/scripts/verify_demo_chain.py` 命令行脚本执行。
 
 ### `GET /api/system/jobs`
 
@@ -334,6 +313,8 @@ AI 高光识别默认逻辑：存在 `LLM_API_KEY` 时优先调用大模型；�
 规则：
 
 - `episode_id` 必须存在。
+- 创建任务只负责入队，不在请求线程内执行 AI 分析。
+- worker 执行时处理字幕缺失、重复分析、AI 调用失败、非法 JSON、非法高光类型和时间范围错误。
 - Redis/RQ 不可用时返回 `503`，并在 `job` 中记录失败状态。
 - 当前仅实现 `ai_analyze`；其他任务类型返回 `400`。
 

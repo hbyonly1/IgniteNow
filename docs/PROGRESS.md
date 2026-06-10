@@ -3,9 +3,13 @@
 ## 2026-06-10 内容管理列表样式调整
 
 ### 已完成
+- 从系统 `JOB_TYPES` 删除 `verify_demo_chain`，保留 `backend/scripts/verify_demo_chain.py` 作为命令行验收脚本；同步确认分析聚合接口、ffprobe、`play_session_id` 和下线移动端上传链路的后续实施方案。
 - 将管理后台内容管理页从顶部指标卡 + 短剧卡片网格调整为白底表格列表，保留并融合原有搜索、筛选、刷新和新建入口。
 - 列表按截图方向展示封面、剧集名称、集数、状态、最后更新时间和操作按钮；点击行或更多按钮仍打开剧集配置 Drawer，管理员仍可编辑短剧。
 - 移除内容管理页上方指标卡，并将工作台主背景、页头、侧栏和内容管理列表容器背景统一调整为白色。
+- 修复内容管理页高度链路：`content-management`、`drama-list-panel` 和 Ant Table wrapper 均接入父级剩余高度，列表面板撑满 `workspace-content-plain`。
+- 内容管理表格复用 AI 分析页的固定表格布局思路，补齐 Ant Table 全链路 100% 宽度；操作列从图标编辑按钮改为文字按钮“编辑信息”，并新增“管理剧集”入口。
+- “管理剧集”入口接入内容管理二级工作台，按参考图生成短剧摘要、剧集表格和右侧选中剧集信息面板；剧集表格复用 AI 分析页同款固定宽度表格骨架，仅展示当前后端已有字段可支撑的状态。
 - 按最新参考图继续收敛内容管理页：隐藏该页工作台顶部栏，改为页面内大标题；右侧只保留搜索框和“上传短剧”主按钮；状态与分页统一为矩形圆角，不使用胶囊样式。
 - 将“上传短剧”弹窗从简单短剧表单升级为参考图方向的分区式创建面板，包含封面设置、基础信息、素材上传和 AI 分析设置；底部主操作改为“完成”，并统一主按钮 hover 强调色为蓝色。
 - 继续统一上传短剧弹窗的白底表单风格：移除 Modal body 默认内边距，输入控件统一白底圆角矩形；基础信息和 AI 设置改为左标题右控件布局，修正剧集数量单位、默认发布状态选择框、上传框描述换行和开关圆点位置。
@@ -14,6 +18,7 @@
 - 将管理后台 Ant Design 全局主题从黑色大圆角调整为蓝色主色、白底、矩形圆角风格；通过 `ConfigProvider` token 和 `base.css` 全局覆盖统一 Button、Input、InputNumber、Select、Upload、Tag 等基础组件，减少后续局部手动修补。
 - 删除内容管理列表中的“更多”操作和对应剧集配置侧拉 Drawer 代码，列表操作区仅保留编辑短剧按钮；同步移除已无引用的 Drawer/剧集表单样式。
 - 将 AI 分析页顶部改为与内容管理一致的页面内大标题、搜索框和主操作按钮；重做指标卡、状态筛选条、可选择任务表格、底部横向批量操作区，并将新建分析任务弹窗调整为与上传短剧弹窗一致的白底圆角矩形风格。
+- AI 分析页删除底部“批量操作”说明栏，将“批量提交 / 批量取消 / 批量重试”放到表格上方右侧并置于刷新按钮左侧；状态分类收敛为“全部、未分析、分析中、已完成、失败”，同时移除旧底部栏占用的 52px 空白行，让表格延伸到页面底部。
 - 优化新建分析任务弹窗的内容资产选择：删除“剧集选择与同步内容”演示控件，改为基于现有短剧/剧集接口的资产选择器，支持搜索、短剧筛选和“只看可分析”过滤；提交任务仍复用现有 `POST /api/system/jobs` 契约。
 - 修复 AI 分析页任务表格布局：关闭 Ant Table 内置分页，改为与内容管理一致的底部固定分页栏；表格链路宽度改为 100%，任务列按百分比分配并启用固定表格布局，操作列右对齐，避免内容挤在左侧导致横向空间未填满。
 - AI 分析页无真实任务数据时的 mock 行“查看详情”按钮改为可点击，并可进入 mock 任务详情页测试详情布局、生成摘要和任务日志。
@@ -25,12 +30,20 @@
 - 发布中心发布配置只保留 Android 播放端渠道，发布时间从文本输入改为可选日期时间控件；待发布内容表格复用 AI 分析页的筛选条、表格骨架和分页样式，并按全部、发布中、未发布、失败分类筛选。
 - 发布中心待发布内容表格在最后更新时间前新增状态列，筛选条左对齐且右侧保留刷新按钮和蓝色“一键发布”按钮；待发布内容区域固定为 500px，高度不随内容变化，内容增多时在表格内部上下滚动。
 - 删除前端后台任务页面、路由和菜单入口；保留后端系统任务接口供 AI 分析等流程继续使用。
+- 删除后端同步 AI 分析接口 `POST /api/episodes/{episode_id}/analyze` 和 `AnalyzeRequest` schema；AI 分析触发统一通过 `/api/system/jobs` 创建 `ai_analyze` 异步任务，测试同步改为覆盖任务创建和 worker 执行路径。
 - 系统设置页补页面内标题，并将设置容器、表单行、按钮和输入控件调整为白底、8px 圆角、蓝色主色风格。
 - 新增 `docs/BACKEND_MOBILE_INTEGRATION_PLAN.md`，基于当前前端页面、后端接口和 Flutter 播放端，整理后端后续开发、Android 衔接、前端增删改和测试补齐方案。
 
 ### 已验证
+- `git diff --check` 通过。
+- 使用系统 Python 配合 `PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache` 完成 `backend/app/routers/admin.py`、`backend/app/schemas.py`、`tests/test_analysis.py`、`tests/test_auth_permissions.py` 和 `tests/test_jobs.py` 语法编译。
+- 尝试执行 `python3 -m pytest tests/test_analysis.py tests/test_auth_permissions.py tests/test_jobs.py`，当前系统 Python 缺少 `structlog`，测试在加载 `backend.app.main` 时中止，未进入用例执行。
 - `npm exec eslint .` 在 `frontend/admin_web` 下通过。
 - `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+- 本次 AI 分析页批量操作区调整后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
+- 本次内容管理页高度修复后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
+- 本次内容管理表格宽度和操作列调整后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
+- 本次管理剧集二级工作台接入后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
 
 ### 遗留问题
 - 已基于用户提供的 `http://127.0.0.1:5174` 截图继续定位表格未铺满问题；当前 Browser 插件未返回可用 `iab` 实例，未能直接完成浏览器截图复验。
@@ -134,7 +147,7 @@
 ### 已完成
 - 新增 RQ/Redis 配置：`REDIS_URL`、`RQ_QUEUE_NAME`，并在 `docker-compose.yml` 加入 Redis 服务。
 - 新增 `job`、`job_log` SQLAlchemy 模型和 `datebase/schema.sql` 表结构，用数据库保存任务状态、进度、错误和任务日志。
-- 抽出 AI 分析业务逻辑到 `backend/app/services/analysis_service.py`，原同步分析接口和 RQ worker 共用同一实现。
+- 抽出 AI 分析业务逻辑到 `backend/app/services/analysis_service.py`；原同步分析接口已于 2026-06-10 删除，当前由 RQ worker 调用同一实现。
 - 新增 `/api/system/jobs`、`/api/system/jobs/{job_id}`、`/api/system/jobs/{job_id}/logs`、`/api/system/jobs/{job_id}/retry`，第一版支持创建和重试 `ai_analyze` RQ 任务。
 - 新增 RQ worker 入口 `python -m backend.app.worker`。
 - 管理后台新增 `/workspace/jobs` 页面，可提交 AI 分析任务、查看任务列表、查看任务日志和重试已结束任务。
@@ -157,7 +170,7 @@
 - `docker build -t ignitenow-app:verify .` 通过；`docker run -d --rm --name ignitenow-app-verify -p 18080:8000 ignitenow-app:verify` 后验证 `/health` 返回 200、`/login` 返回 200 HTML、前端 CSS 静态资源返回 200。
 
 ### 遗留问题
-- `ocr_import` 和 `verify_demo_chain` 仅预留任务类型，执行器尚未接入。
+- 当时 `ocr_import` 和 `verify_demo_chain` 仅预留任务类型、执行器尚未接入；`verify_demo_chain` 后续已从系统任务枚举删除。
 - 统一系统日志、`system_settings` 和 `/workspace/settings` 尚未实现。
 - 当前 RQ 第一版为单队列；服务重启时 running 任务需要依赖 RQ/worker 状态和后续补偿逻辑进一步收口。
 
@@ -256,11 +269,11 @@
 ### 已验证
 
 - `python -m compileall backend ai_service` 通过。
-- FastAPI TestClient 主链路通过：`/health`、`/api/demo/seed`、`/api/episodes/1/analyze`、`/api/episodes/1/highlights/publish`、`/api/player/episodes/1`、`/api/interactions`、`/api/analytics/overview`。
+- FastAPI TestClient 主链路通过：`/health`、`/api/demo/seed`、`/api/system/jobs` 创建 AI 分析任务、`/api/episodes/1/highlights/publish`、`/api/player/episodes/1`、`/api/interactions`、`/api/analytics/overview`。
 - `npm install` 和 `npm run build` 通过；Vite 仅提示 Ant Design chunk 偏大，不影响运行。
 - `flutter pub get` 通过。
 - `flutter analyze` 通过，无静态分析问题。
-- 大模型接入后验证：未配置 `LLM_API_KEY` 时，`POST /api/episodes/1/analyze` 自动走 `fallback_rules` 并生成 3 条高光。
+- 大模型接入后验证：未配置 `LLM_API_KEY` 时，`ai_analyze` 异步任务由 worker 自动走 `fallback_rules` 并生成高光。
 - 播放端入口接口验证：`GET /api/player/dramas`、`GET /api/player/dramas/1/episodes` 可返回数据库短剧和剧集数据。
 - 本地视频代理验证：`D:\byte\upload\videos\E007.mp4` 存在时，`GET /api/player/episodes/3` 返回 `/video` 代理地址，`GET /api/player/episodes/3/video` 返回 MP4 文件。
 - 本地视频批量验证：`GET /api/player/episodes/4..9` 均返回 `/video` 代理地址，`GET /api/player/episodes/{id}/video` 支持 `Range: bytes=0-1023` 并返回 `206 video/mp4`。

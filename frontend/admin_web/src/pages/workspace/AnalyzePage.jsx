@@ -21,7 +21,6 @@ import {
   ClockCircleOutlined,
   CloseOutlined,
   FileSearchOutlined,
-  FolderOpenOutlined,
   PlayCircleFilled,
   ReloadOutlined,
   RotateRightOutlined,
@@ -33,8 +32,8 @@ import {
 import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
 
 const stageMeta = {
-  pending: { label: '排队中', color: 'default' },
-  processing: { label: '高光识别', color: 'processing' },
+  pending: { label: '未分析', color: 'default' },
+  processing: { label: '分析中', color: 'processing' },
   success: { label: '已完成', color: 'success' },
   failed: { label: '失败', color: 'error' },
 };
@@ -271,9 +270,6 @@ function AnalyzeQueue() {
         if (keyword && !`${row.drama_title} ${row.title}`.toLowerCase().includes(keyword)) {
           return false;
         }
-        if (statusFilter === 'review') {
-          return row.analyze_status === 'success' && Number(row.draft_highlight_count ?? 0) > 0;
-        }
         if (statusFilter !== 'all' && row.analyze_status !== statusFilter) {
           return false;
         }
@@ -308,6 +304,11 @@ function AnalyzeQueue() {
     () => rows.slice((effectivePage - 1) * pageSize, effectivePage * pageSize),
     [effectivePage, rows],
   );
+  const selectedRows = useMemo(
+    () => rows.filter((item) => selectedRowKeys.includes(item.id) && !item.is_mock),
+    [rows, selectedRowKeys],
+  );
+  const hasSelectedRows = selectedRows.length > 0;
 
   const assetRows = useMemo(() => {
     const keyword = assetQuery.trim().toLowerCase();
@@ -365,22 +366,21 @@ function AnalyzeQueue() {
   };
 
   const submitBatchRetry = async () => {
-    const selected = rows.filter((item) => selectedRowKeys.includes(item.id) && !item.is_mock);
-    if (!selected.length) {
+    if (!selectedRows.length) {
       message.warning('请选择任务');
       return;
     }
     setLoading(true);
     try {
       await Promise.all(
-        selected.map((episode) =>
+        selectedRows.map((episode) =>
           apiClient.post('/api/system/jobs', {
             type: 'ai_analyze',
             payload: { episode_id: episode.id, force_reanalyze: true },
           }),
         ),
       );
-      message.success(`已批量重试 ${selected.length} 个任务`);
+      message.success(`已批量重试 ${selectedRows.length} 个任务`);
       setSelectedRowKeys([]);
       await loadData();
     } catch (error) {
@@ -388,6 +388,39 @@ function AnalyzeQueue() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const submitBatchAnalysis = async () => {
+    if (!selectedRows.length) {
+      message.warning('请选择任务');
+      return;
+    }
+    setLoading(true);
+    try {
+      await Promise.all(
+        selectedRows.map((episode) =>
+          apiClient.post('/api/system/jobs', {
+            type: 'ai_analyze',
+            payload: { episode_id: episode.id, force_reanalyze: false },
+          }),
+        ),
+      );
+      message.success(`已批量提交 ${selectedRows.length} 个任务`);
+      setSelectedRowKeys([]);
+      await loadData();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '批量提交失败'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelBatchAnalysis = () => {
+    if (!selectedRows.length) {
+      message.warning('请选择任务');
+      return;
+    }
+    message.warning('批量取消接口尚未接入');
   };
 
   const submitSingleRetry = async (episode) => {
@@ -523,15 +556,40 @@ function AnalyzeQueue() {
             buttonStyle="solid"
             options={[
               { label: '全部', value: 'all' },
+              { label: '未分析', value: 'pending' },
               { label: '分析中', value: 'processing' },
-              { label: '待复核', value: 'review' },
               { label: '已完成', value: 'success' },
-              { label: '排队中', value: 'pending' },
               { label: '失败', value: 'failed' },
             ]}
           />
           <div className="analysis-filter-actions">
-            <Button icon={<ReloadOutlined />} onClick={loadData} />
+            <Button
+              type="primary"
+              className="analysis-bulk-action"
+              icon={<SendOutlined />}
+              disabled={!hasSelectedRows}
+              onClick={submitBatchAnalysis}
+            >
+              批量提交
+            </Button>
+            <Button
+              danger
+              className="analysis-bulk-action"
+              icon={<CloseOutlined />}
+              disabled={!hasSelectedRows}
+              onClick={cancelBatchAnalysis}
+            >
+              批量取消
+            </Button>
+            <Button
+              className="analysis-bulk-action"
+              icon={<RotateRightOutlined />}
+              disabled={!hasSelectedRows}
+              onClick={submitBatchRetry}
+            >
+              批量重试
+            </Button>
+            <Button className="analysis-reload-action" icon={<ReloadOutlined />} onClick={loadData} />
           </div>
         </div>
 
@@ -560,19 +618,6 @@ function AnalyzeQueue() {
             onChange={setCurrentPage}
           />
         </div>
-      </section>
-
-      <section className="analysis-batchbar">
-        <div>
-          <h3>批量操作</h3>
-          <p>选中多条任务后可执行批量处理，提升效率</p>
-        </div>
-        <Button icon={<RotateRightOutlined />} onClick={submitBatchRetry}>
-          批量重试
-        </Button>
-        <Button icon={<SendOutlined />}>批量提交复核</Button>
-        <Button danger icon={<CloseOutlined />}>批量取消</Button>
-        <Button icon={<FolderOpenOutlined />}>回写内容管理</Button>
       </section>
 
       <Modal

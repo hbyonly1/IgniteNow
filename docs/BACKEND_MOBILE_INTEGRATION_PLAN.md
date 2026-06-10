@@ -2,14 +2,22 @@
 
 本文基于当前管理后台页面、Flutter 播放端实现、后端已完成接口和数据模型，梳理后续后端开发重点，以及 Web 管理后台、Android 播放端需要增删改的功能。
 
+## 0. 已确认实施决定
+
+- AI 分析列表确定新增并使用 `GET /api/analysis/queue` 聚合接口；前端不再自行拼接 drama、episode 和 job 列表数据。
+- 管理后台视频上传确定接入 `ffprobe`，由后端解析 duration、width、height、file_size 和 mime_type。
+- 互动日志确定新增 `play_session_id`；Android 每次进入播放页生成一个 UUID，并随 impression、click、ignore 一起回传。
+- 移动端上传链路确定下线：删除 `POST /api/uploads/episodes`、移动端上传页面及入口。Android 保留 `/api/player/*` 播放接口和 `POST /api/interactions` 互动回传接口。
+- `verify_demo_chain` 确定从系统 `JOB_TYPES` 删除；`backend/scripts/verify_demo_chain.py` 继续作为命令行验收脚本保留。
+
 ## 1. 当前真实状态
 
 ### 1.1 已经跑通的后端能力
 
 - 账号与权限：`/api/auth/register`、`/api/auth/login`、`/api/auth/me`、`/api/auth/logout` 已支持 Bearer JWT；`admin` 和 `uploader` 已区分权限。
 - 内容资产：`drama`、`episode` 已有基础表和后台接口；`episode.owner_user_id` 已用于 uploader 数据隔离。
-- 移动端上传：`POST /api/uploads/episodes` 已支持移动端上传单集 MP4、字幕文件或字幕文本。
-- AI 分析：同步接口 `/api/episodes/{episode_id}/analyze` 与异步任务 `/api/system/jobs` 已接入同一分析服务，支持 RQ。
+- 移动端上传：`POST /api/uploads/episodes` 当前仍存在，但已确定下线，内容上传统一迁移到管理后台。
+- AI 分析：同步接口 `/api/episodes/{episode_id}/analyze` 已删除，触发分析统一通过 `/api/system/jobs` 创建 `ai_analyze` 异步任务，实际执行由 RQ worker 调用同一分析服务完成。
 - 高光管理：`highlight_event.status` 已支持 `draft`、`published`、`rejected`、`archived`；后台可新增、编辑、归档、批量改状态和发布 draft 高光。
 - 播放端接口：`/api/player/dramas`、`/api/player/dramas/{drama_id}/episodes`、`/api/player/episodes/{episode_id}` 已只下发 `published` 高光，并隐藏 `reason`、`confidence`、`status` 等审核字段。
 - 互动回传：`POST /api/interactions` 已支持 `impression`、`click`、`ignore`，并用 `idempotency_key` 保证幂等。
@@ -29,7 +37,7 @@
 - 播放页消费 `GET /api/player/episodes/{episode_id}`，字段为 `episode_id`、`title`、`video_url`、`duration`、`highlights`。
 - 高光触发使用 `highlight_id`、`start_time`、`end_time`、`trigger_score`、`button_text`、`effect`。
 - 互动日志使用匿名 `user_id`，按 `user_id_highlight_id_action_type_minuteBucket` 生成幂等键。
-- 上传页消费 `/api/auth/*` 与 `/api/uploads/episodes`，这条链路是“移动端上传内容”，不是当前管理后台“上传短剧”弹窗。
+- 上传页当前消费 `/api/auth/*` 与 `/api/uploads/episodes`；该页面、入口和上传 API 已确定删除。
 
 ## 2. 目标链路
 
@@ -81,7 +89,7 @@
 | `POST /api/dramas/{drama_id}/episodes/batch` | 批量创建剧集配置，第一版可只接 JSON，不必立刻解析 Excel |
 | `POST /api/dramas/{drama_id}/enqueue-analysis` | 按短剧批量提交 AI 分析任务 |
 
-也可以复用 `/api/uploads/episodes`，但不建议让后台长期依赖移动端上传接口。后台上传需要更强的批量能力、管理员权限、素材状态、封面和横版封面处理。
+不复用 `/api/uploads/episodes`。该移动端上传接口确定删除，后台上传使用本节定义的管理员素材接口，以支持批量能力、管理员权限、素材状态、封面和横版封面处理。
 
 ### 3.3 发布中心真实化
 
@@ -195,21 +203,17 @@ episode.android_publish_status = published
 - `asset_completion` 或 `asset_status`
 - `latest_job`
 
-AI 分析页现在自己拼 job、drama、episode。后端可以保留现状，但更推荐新增聚合接口：
+AI 分析页现在自己拼 job、drama、episode。确定新增聚合接口：
 
 ```http
 GET /api/analysis/queue
 ```
 
-返回每个 episode 的短剧名、封面、字幕状态、AI 状态、最新任务、草稿高光数、更新时间。这样前端不用在浏览器中做多接口聚合，也便于权限过滤。
+返回每个 episode 的短剧名、封面、`asset_status`、字幕状态、AI 状态、最新任务、草稿高光数、更新时间。接入后，AI 分析列表只读取该接口；创建、重试任务仍使用 `/api/system/jobs`，任务详情和日志接口继续保留。权限过滤统一在后端完成。
 
 ### 4.2 `/api/system/jobs`
 
-当前只实现 `ai_analyze`，但 `JOB_TYPES` 里还有 `ocr_import` 和 `verify_demo_chain`。建议：
-
-- 要么先从对外返回中隐藏未实现任务类型。
-- 要么补实现器。
-- 不要在 UI 中暴露不可执行任务。
+当前只实现 `ai_analyze`。`verify_demo_chain` 从 `JOB_TYPES` 删除，继续作为命令行验收脚本使用；`ocr_import` 暂保留为预留类型，但在执行器完成前不得在 UI 中暴露。
 
 另外建议增加：
 
@@ -218,14 +222,14 @@ GET /api/analysis/queue
 
 ### 4.3 上传服务
 
-当前上传视频只校验文件保存，视频时长仍由前端传。建议后端接入 `ffprobe` 或等价能力，自动解析：
+管理后台视频上传确定接入 `ffprobe`，由后端自动解析：
 
 - duration
 - width / height
 - file_size
 - mime_type
 
-并统一写入 episode 或 asset 表，避免移动端和后台分别猜时长。
+解析结果统一写入 episode 或 asset 表；上传失败、解析超时和非法视频必须返回明确错误。部署镜像必须安装 FFmpeg/ffprobe。
 
 ### 4.4 互动幂等策略
 
@@ -237,7 +241,7 @@ GET /api/analysis/queue
 - `click`: 同一高光一次。
 - `ignore`: 每次展示超时一次。
 
-可以新增 `play_session_id` 字段，比当前分钟桶更清晰。
+确定新增 `play_session_id` 字段，替换仅依赖分钟桶区分播放过程的方式。Android 每次进入播放页生成一个 UUID，同一播放过程的所有互动使用同一个值。
 
 ## 5. 后端建议删除或下线的内容
 
@@ -245,8 +249,10 @@ GET /api/analysis/queue
 |---|---|---|
 | 旧 `X-Admin-Token` 文档残留 | 删除或标记废弃 | 当前已统一 Bearer JWT |
 | 前端不可用的后台任务入口 | 已删除页面，后端保留 API | 后端 API 仍支撑 AI 分析，不删除 |
-| `ocr_import`、`verify_demo_chain` 对外任务类型 | 暂时从前端选项隐藏 | 未实现执行器，避免误用 |
-| 同步分析接口 `/api/episodes/{id}/analyze` | 保留兼容，前端主用 `/api/system/jobs` | 避免阻塞请求线程 |
+| `verify_demo_chain` 系统任务类型 | 从 `JOB_TYPES` 删除 | 它是命令行验收脚本，不是业务任务 |
+| `ocr_import` 对外任务类型 | 暂时从前端选项隐藏 | 未实现执行器，避免误用 |
+| 移动端上传接口与页面 | 删除 | 内容上传统一由管理后台负责 |
+| 同步分析接口 `/api/episodes/{id}/analyze` | 删除 | AI 分析统一异步化，避免阻塞请求线程并统一任务状态、日志和失败重试 |
 | 发布中心 mock 数据 | 接入真实发布接口后删除 | 避免演示数据和真实数据混杂 |
 | 上传短剧弹窗中的假文件 chip | 接入真实上传后删除 | 当前“第1集_1080p.mp4 上传完成”是静态假状态 |
 
@@ -378,7 +384,7 @@ Android 不应调用后台接口，不应携带管理员 token。推荐保持以
 - 剧集列表区分“暂无高光”和“可播放但无互动”。
 - 播放页在视频加载失败时展示可复制的 `video_url` 或 request id，便于联调。
 - 互动日志失败时做本地队列重试，不要只在内存里丢弃。
-- 如果后端增加 `play_session_id`，移动端启动播放页时生成并随每次互动回传。
+- 移动端启动播放页时生成 `play_session_id`，并随每次互动回传。
 - 如果后端设置页启用 `overlay_duration_ms`，播放详情或单独配置接口需要下发该值，移动端不要写死 4 秒。
 
 ## 8. 推荐实施顺序

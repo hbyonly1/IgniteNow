@@ -10,20 +10,22 @@ import {
   Switch,
   Table,
   Tag,
-  Tooltip,
   Upload,
   message,
 } from 'antd';
 import {
+  ArrowLeftOutlined,
   CloseOutlined,
   CloudUploadOutlined,
   DeleteOutlined,
   DownOutlined,
-  EditOutlined,
   FileTextOutlined,
   InboxOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
   SearchOutlined,
+  SendOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import { getAdminUserRole } from '../../auth.js';
 import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
@@ -62,6 +64,56 @@ function dramaRisk(drama) {
   return { color: 'default', label: '待配置' };
 }
 
+function hasSubtitle(episode) {
+  return Boolean(episode.subtitle_content || episode.subtitle_url);
+}
+
+function formatDuration(value) {
+  const seconds = Number(value ?? 0);
+  if (!seconds) {
+    return '-';
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remain = Math.round(seconds % 60);
+  return `${String(minutes).padStart(2, '0')}:${String(remain).padStart(2, '0')}`;
+}
+
+function analysisStatusMeta(status) {
+  if (status === 'processing') {
+    return { label: '分析中', color: 'processing' };
+  }
+  if (status === 'success') {
+    return { label: '已完成', color: 'success' };
+  }
+  if (status === 'failed') {
+    return { label: '失败', color: 'error' };
+  }
+  return { label: '待分析', color: 'warning' };
+}
+
+function publishStatusMeta(episode) {
+  if (Number(episode.published_highlight_count ?? 0) > 0) {
+    return { label: '已发布', color: 'success' };
+  }
+  if (Number(episode.draft_highlight_count ?? 0) > 0) {
+    return { label: '待发布', color: 'warning' };
+  }
+  return { label: '草稿', color: 'default' };
+}
+
+function episodeCompleteness(episode) {
+  if (!episode) {
+    return 0;
+  }
+  const checks = [
+    Boolean(episode.video_url),
+    hasSubtitle(episode),
+    episode.analyze_status === 'success',
+    Number(episode.draft_highlight_count ?? 0) + Number(episode.published_highlight_count ?? 0) > 0,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
 export default function DramasPage() {
   const role = getAdminUserRole();
   const isAdmin = role === 'admin';
@@ -72,6 +124,13 @@ export default function DramasPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [dramaModalOpen, setDramaModalOpen] = useState(false);
   const [editingDrama, setEditingDrama] = useState(null);
+  const [managingDrama, setManagingDrama] = useState(null);
+  const [episodes, setEpisodes] = useState([]);
+  const [episodeLoading, setEpisodeLoading] = useState(false);
+  const [episodeQuery, setEpisodeQuery] = useState('');
+  const [episodeCurrentPage, setEpisodeCurrentPage] = useState(1);
+  const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
+  const [selectedEpisodeRowKeys, setSelectedEpisodeRowKeys] = useState([]);
   const [dramaForm] = Form.useForm();
 
   const filteredDramas = useMemo(() => {
@@ -96,6 +155,31 @@ export default function DramasPage() {
     return filteredDramas.slice(start, start + pageSize);
   }, [effectivePage, filteredDramas]);
 
+  const filteredEpisodes = useMemo(() => {
+    const keyword = episodeQuery.trim().toLowerCase();
+    return episodes
+      .filter((episode) => {
+        if (!keyword) {
+          return true;
+        }
+        return `${episode.title} ${episode.episode_no}`.toLowerCase().includes(keyword);
+      })
+      .sort((a, b) => a.episode_no - b.episode_no);
+  }, [episodeQuery, episodes]);
+
+  const episodePageSize = 8;
+  const episodeMaxPage = Math.max(1, Math.ceil(filteredEpisodes.length / episodePageSize));
+  const episodeEffectivePage = Math.min(episodeCurrentPage, episodeMaxPage);
+  const pagedEpisodes = useMemo(() => {
+    const start = (episodeEffectivePage - 1) * episodePageSize;
+    return filteredEpisodes.slice(start, start + episodePageSize);
+  }, [episodeEffectivePage, filteredEpisodes]);
+
+  const selectedEpisode = useMemo(
+    () => episodes.find((episode) => episode.id === selectedEpisodeId) ?? null,
+    [episodes, selectedEpisodeId],
+  );
+
   const loadDramas = async () => {
     setLoading(true);
     try {
@@ -106,6 +190,28 @@ export default function DramasPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadEpisodes = async (drama) => {
+    setEpisodeLoading(true);
+    try {
+      const response = await apiClient.get('/api/episodes', { params: { drama_id: drama.id } });
+      const nextEpisodes = response.data.data ?? [];
+      setEpisodes(nextEpisodes);
+      setSelectedEpisodeId(nextEpisodes[0]?.id ?? null);
+      setSelectedEpisodeRowKeys([]);
+      setEpisodeCurrentPage(1);
+    } catch (error) {
+      message.error(apiErrorMessage(error, '剧集列表加载失败'));
+    } finally {
+      setEpisodeLoading(false);
+    }
+  };
+
+  const openEpisodeManagement = async (drama) => {
+    setManagingDrama(drama);
+    setEpisodeQuery('');
+    await loadEpisodes(drama);
   };
 
   const openDramaModal = (drama = null) => {
@@ -174,6 +280,7 @@ export default function DramasPage() {
     {
       title: '剧集名称',
       dataIndex: 'title',
+      width: '30%',
       render: (_, record) => (
         <div className="drama-list-title">
           <span className="drama-list-cover">
@@ -189,13 +296,13 @@ export default function DramasPage() {
     {
       title: '集数',
       dataIndex: 'episode_count',
-      width: 110,
+      width: '12%',
       render: (value) => `${value ?? 0} 集`,
     },
     {
       title: '状态',
       key: 'status',
-      width: 130,
+      width: '16%',
       render: (_, record) => {
         const risk = dramaRisk(record);
         return (
@@ -208,34 +315,268 @@ export default function DramasPage() {
     {
       title: '最后更新时间',
       key: 'updated_at',
-      width: 180,
+      width: '20%',
       render: (_, record) => formatDateTime(record.updated_at ?? record.created_at),
     },
     {
       title: '操作',
       key: 'actions',
-      width: 100,
+      width: '22%',
       align: 'right',
-      render: (_, record) => (
-        isAdmin ? (
-          <Tooltip title="编辑短剧">
+      className: 'drama-list-action-column',
+      render: (_, record) => {
+        const stop = (event) => event.stopPropagation();
+        return (
+          <div className="drama-list-actions" onClick={stop}>
+            {isAdmin ? (
+              <Button
+                type="link"
+                className="drama-list-text-action"
+                onClick={() => openDramaModal(record)}
+              >
+                编辑信息
+              </Button>
+            ) : null}
             <Button
-              size="small"
-              icon={<EditOutlined />}
-              onClick={(event) => {
-                event.stopPropagation();
-                openDramaModal(record);
-              }}
-            />
-          </Tooltip>
-        ) : null
+              type="link"
+              className="drama-list-text-action"
+              onClick={() => openEpisodeManagement(record)}
+            >
+              管理剧集
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
+
+  const episodeColumns = [
+    {
+      title: '剧集',
+      dataIndex: 'episode_no',
+      width: '24%',
+      render: (_, record) => (
+        <div className="episode-list-title">
+          <span className="episode-list-cover">
+            {managingDrama?.cover_url ? <img src={managingDrama.cover_url} alt="" loading="lazy" /> : <span>{record.episode_no}</span>}
+          </span>
+          <span className="episode-list-copy">
+            <strong>第 {record.episode_no} 集</strong>
+            <span>{record.title}</span>
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: '时长',
+      dataIndex: 'duration',
+      width: '8%',
+      render: formatDuration,
+    },
+    {
+      title: '视频状态',
+      key: 'video_url',
+      width: '10%',
+      render: (_, record) => (
+        <Tag className="drama-list-status" color={record.video_url ? 'success' : 'error'}>
+          {record.video_url ? '已上传' : '待上传'}
+        </Tag>
+      ),
+    },
+    {
+      title: '字幕状态',
+      key: 'subtitle',
+      width: '10%',
+      render: (_, record) => (
+        <Tag className="drama-list-status" color={hasSubtitle(record) ? 'success' : 'warning'}>
+          {hasSubtitle(record) ? '已识别' : '待识别'}
+        </Tag>
+      ),
+    },
+    {
+      title: 'AI分析状态',
+      dataIndex: 'analyze_status',
+      width: '12%',
+      render: (value) => {
+        const meta = analysisStatusMeta(value);
+        return (
+          <Tag className="drama-list-status" color={meta.color}>
+            {meta.label}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: '发布状态',
+      key: 'publish_status',
+      width: '10%',
+      render: (_, record) => {
+        const meta = publishStatusMeta(record);
+        return (
+          <Tag className="drama-list-status" color={meta.color}>
+            {meta.label}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: '更新时间',
+      key: 'created_at',
+      width: '14%',
+      render: (_, record) => formatDateTime(record.updated_at ?? record.created_at),
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: '12%',
+      align: 'right',
+      className: 'drama-list-action-column',
+      render: (_, record) => (
+        <div className="episode-row-actions" onClick={(event) => event.stopPropagation()}>
+          <Button type="link" className="drama-list-text-action" onClick={() => setSelectedEpisodeId(record.id)}>
+            查看
+          </Button>
+          <Button type="link" className="drama-list-text-action" onClick={() => message.info('剧集编辑接口待接入')}>
+            编辑
+          </Button>
+        </div>
       ),
     },
   ];
 
   return (
     <>
-      <section className="content-management">
+      {managingDrama ? (
+        <section className="episode-management">
+          <div className="content-page-header">
+            <div className="content-page-title">
+              <h1>剧集管理</h1>
+              <p>管理短剧下的剧集信息、素材状态、字幕配置与发布进度</p>
+            </div>
+            <div className="content-toolbar">
+              <Input
+                className="content-search"
+                allowClear
+                suffix={<SearchOutlined />}
+                placeholder="搜索剧集名称或集数"
+                value={episodeQuery}
+                onChange={(event) => {
+                  setEpisodeQuery(event.target.value);
+                  setEpisodeCurrentPage(1);
+                }}
+              />
+              <Button icon={<UploadOutlined />} onClick={() => message.info('批量导入接口待接入')}>
+                批量导入
+              </Button>
+              <Button type="primary" className="content-upload-action" icon={<PlusOutlined />} onClick={() => message.info('新建剧集接口待接入')}>
+                新增剧集
+              </Button>
+            </div>
+          </div>
+
+          <section className="episode-drama-summary">
+            <div className="episode-summary-cover">
+              {managingDrama.cover_url ? <img src={managingDrama.cover_url} alt="" loading="lazy" /> : <span>{managingDrama.title.slice(0, 2)}</span>}
+            </div>
+            <div className="episode-summary-main">
+              <strong>{managingDrama.title}</strong>
+              <span>共 {episodes.length} 集</span>
+            </div>
+            <div className="episode-summary-stats">
+              <span>已发布 <strong>{episodes.filter((item) => Number(item.published_highlight_count ?? 0) > 0).length}</strong> 集</span>
+              <span>待分析 <strong>{episodes.filter((item) => item.analyze_status === 'pending').length}</strong> 集</span>
+              <span>分析完成 <strong>{episodes.filter((item) => item.analyze_status === 'success').length}</strong> 集</span>
+            </div>
+            <Button onClick={() => setManagingDrama(null)} icon={<ArrowLeftOutlined />}>
+              返回短剧
+            </Button>
+          </section>
+
+          <div className="episode-management-grid">
+            <section className="episode-table-panel">
+              <div className="analysis-filterbar episode-table-toolbar">
+                <span>已选择 {selectedEpisodeRowKeys.length} 项</span>
+                <div className="analysis-filter-actions">
+                  <Button icon={<FileTextOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量设置字幕</Button>
+                  <Button icon={<SendOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量发起分析</Button>
+                  <Button icon={<SendOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量发布</Button>
+                </div>
+              </div>
+              <Table
+                className="episode-management-table"
+                style={{ width: '100%', minWidth: '100%' }}
+                rowKey="id"
+                tableLayout="fixed"
+                loading={episodeLoading}
+                columns={episodeColumns}
+                dataSource={pagedEpisodes}
+                locale={{ emptyText: <Empty description={episodeLoading ? '加载中' : '暂无剧集'} /> }}
+                rowSelection={{
+                  selectedRowKeys: selectedEpisodeRowKeys,
+                  onChange: setSelectedEpisodeRowKeys,
+                }}
+                onRow={(record) => ({
+                  onClick: () => setSelectedEpisodeId(record.id),
+                  className: record.id === selectedEpisode?.id ? 'episode-row-selected' : '',
+                })}
+                pagination={false}
+              />
+              <div className="drama-list-pagination">
+                <span>共 {filteredEpisodes.length} 条</span>
+                <Pagination
+                  current={episodeEffectivePage}
+                  pageSize={episodePageSize}
+                  total={filteredEpisodes.length}
+                  showSizeChanger={false}
+                  onChange={setEpisodeCurrentPage}
+                />
+              </div>
+            </section>
+
+            <aside className="episode-detail-panel">
+              <div className="episode-detail-header">
+                <span>当前选中：第 {selectedEpisode?.episode_no ?? '-'} 集</span>
+                <Button size="small" disabled={!selectedEpisode} onClick={() => setSelectedEpisodeId(null)}>取消选择</Button>
+              </div>
+              <div className="episode-detail-card">
+                <h3>剧集信息</h3>
+                <dl>
+                  <dt>剧集编号</dt>
+                  <dd>{selectedEpisode ? `E${String(selectedEpisode.episode_no).padStart(2, '0')}` : '-'}</dd>
+                  <dt>剧集名称</dt>
+                  <dd>{selectedEpisode?.title ?? '-'}</dd>
+                  <dt>时长</dt>
+                  <dd>{formatDuration(selectedEpisode?.duration)}</dd>
+                  <dt>创建时间</dt>
+                  <dd>{formatDateTime(selectedEpisode?.created_at)}</dd>
+                </dl>
+              </div>
+              <div className="episode-detail-card">
+                <h3>素材完整度</h3>
+                <strong className="episode-completeness">{episodeCompleteness(selectedEpisode)}%</strong>
+                <div className="episode-completeness-bar">
+                  <span style={{ width: `${episodeCompleteness(selectedEpisode)}%` }} />
+                </div>
+                <ul>
+                  <li><span>视频素材</span><Tag color={selectedEpisode?.video_url ? 'success' : 'error'}>{selectedEpisode?.video_url ? '已上传' : '待上传'}</Tag></li>
+                  <li><span>字幕</span><Tag color={hasSubtitle(selectedEpisode ?? {}) ? 'success' : 'warning'}>{hasSubtitle(selectedEpisode ?? {}) ? '已识别' : '待识别'}</Tag></li>
+                  <li><span>AI 分析</span><Tag color={analysisStatusMeta(selectedEpisode?.analyze_status).color}>{analysisStatusMeta(selectedEpisode?.analyze_status).label}</Tag></li>
+                  <li><span>高光点</span><Tag color={Number(selectedEpisode?.draft_highlight_count ?? 0) + Number(selectedEpisode?.published_highlight_count ?? 0) > 0 ? 'success' : 'default'}>{Number(selectedEpisode?.draft_highlight_count ?? 0) + Number(selectedEpisode?.published_highlight_count ?? 0)} 个</Tag></li>
+                </ul>
+              </div>
+              <div className="episode-detail-card">
+                <h3>快速操作</h3>
+                <div className="episode-quick-actions">
+                  <Button type="primary" icon={<PlayCircleOutlined />}>进入编辑短剧</Button>
+                  <Button icon={<UploadOutlined />}>替换视频</Button>
+                  <Button icon={<FileTextOutlined />}>管理字幕</Button>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </section>
+      ) : (
+        <section className="content-management">
         <div className="content-page-header">
           <div className="content-page-title">
             <h1>内容管理</h1>
@@ -263,7 +604,10 @@ export default function DramasPage() {
 
         <div className="drama-list-panel">
           <Table
+            className="drama-content-table"
+            style={{ width: '100%', minWidth: '100%' }}
             rowKey="id"
+            tableLayout="fixed"
             loading={loading}
             columns={dramaColumns}
             dataSource={pagedDramas}
@@ -281,7 +625,8 @@ export default function DramasPage() {
             />
           </div>
         </div>
-      </section>
+        </section>
+      )}
 
       <Modal
         className="upload-drama-modal"

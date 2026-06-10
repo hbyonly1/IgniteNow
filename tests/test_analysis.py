@@ -1,41 +1,81 @@
+import json
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from backend.app.models import Drama, Episode, HighlightEvent, UserAccount
+from backend.app.jobs import tasks
+from backend.app.models import Drama, Episode, HighlightEvent, Job, JobLog, UserAccount
+
+
+class _SessionProxy:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def __getattr__(self, name: str):
+        return getattr(self._session, name)
+
+    def close(self) -> None:
+        return None
 
 
 def test_login_required_for_analysis(client: TestClient, demo_episode: Episode) -> None:
-    response = client.post(f"/api/episodes/{demo_episode.id}/analyze", json={"force_reanalyze": False})
+    response = client.post(
+        "/api/system/jobs",
+        json={"type": "ai_analyze", "payload": {"episode_id": demo_episode.id, "force_reanalyze": False}},
+    )
 
     assert response.status_code == 401
 
 
-def test_analysis_requires_subtitle_and_marks_episode_failed(
+def test_sync_analysis_endpoint_is_removed(
     client: TestClient,
-    db_session: Session,
     demo_episode: Episode,
-    uploader_headers: dict[str, str],
+    admin_headers: dict[str, str],
 ) -> None:
-    uploader = db_session.query(UserAccount).filter(UserAccount.username == "uploader-user").one()
-    demo_episode.owner_user_id = uploader.id
-    db_session.commit()
-
     response = client.post(
         f"/api/episodes/{demo_episode.id}/analyze",
         json={"force_reanalyze": False},
-        headers=uploader_headers,
+        headers=admin_headers,
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 404
+
+
+def test_analysis_requires_subtitle_and_marks_episode_failed(
+    db_session: Session,
+    demo_episode: Episode,
+    uploader_headers: dict[str, str],
+    monkeypatch,
+) -> None:
+    uploader = db_session.query(UserAccount).filter(UserAccount.username == "uploader-user").one()
+    demo_episode.owner_user_id = uploader.id
+    job = Job(
+        type="ai_analyze",
+        status="pending",
+        progress=0,
+        payload_json=f'{{"episode_id": {demo_episode.id}, "force_reanalyze": false}}',
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    monkeypatch.setattr(tasks, "SessionLocal", lambda: _SessionProxy(db_session))
+
+    with pytest.raises(ValueError, match="subtitle is required"):
+        tasks.run_ai_analyze_job(job.id)
+
     db_session.refresh(demo_episode)
+    db_session.refresh(job)
     assert demo_episode.analyze_status == "failed"
     assert demo_episode.analyze_error == "subtitle is required"
+    assert job.status == "failed"
+    assert job.error == "subtitle is required"
 
 
 def test_analysis_creates_draft_highlights_without_status_from_ai(
-    client: TestClient,
     db_session: Session,
-    admin_headers: dict[str, str],
+    monkeypatch,
 ) -> None:
     drama = Drama(title="Analysis Drama")
     episode = Episode(
@@ -47,18 +87,27 @@ def test_analysis_creates_draft_highlights_without_status_from_ai(
         duration=10,
     )
     db_session.add_all([drama, episode])
+    db_session.flush()
+    job = Job(
+        type="ai_analyze",
+        status="pending",
+        progress=0,
+        payload_json=f'{{"episode_id": {episode.id}, "force_reanalyze": false}}',
+    )
+    db_session.add(job)
     db_session.commit()
     db_session.refresh(episode)
+    db_session.refresh(job)
 
-    response = client.post(
-        f"/api/episodes/{episode.id}/analyze",
-        json={"force_reanalyze": False},
-        headers=admin_headers,
-    )
+    monkeypatch.setattr(tasks, "SessionLocal", lambda: _SessionProxy(db_session))
 
-    assert response.status_code == 200
-    assert response.json()["data"]["highlight_count"] == 1
-    assert response.json()["data"]["invalid_count"] == 0
+    tasks.run_ai_analyze_job(job.id)
+
+    db_session.refresh(job)
+    assert job.status == "success"
+    result_log = db_session.query(JobLog).filter(JobLog.job_id == job.id).order_by(JobLog.id.desc()).first()
+    assert result_log is not None
+    assert json.loads(result_log.context_json)["highlight_count"] == 1
     highlight = db_session.query(HighlightEvent).filter(HighlightEvent.episode_id == episode.id).one()
     assert highlight.status == "draft"
 
