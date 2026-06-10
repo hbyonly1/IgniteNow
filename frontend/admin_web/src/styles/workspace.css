@@ -230,7 +230,7 @@
   box-sizing: border-box;
   height: 100vh;
   min-height: 0;
-  padding: 22px 32px 28px;
+  padding: 15px 20px 10px
 }
 
 .workspace-grid {
@@ -1009,14 +1009,12 @@
 }
 
 .upload-info-panel .ant-form-item,
-.upload-cover-panel .ant-form-item,
-.upload-status-field {
+.upload-cover-panel .ant-form-item {
   margin-bottom: 10px;
 }
 
 .upload-info-panel .ant-form-item:last-child,
-.upload-cover-panel .ant-form-item:last-child,
-.upload-status-field {
+.upload-cover-panel .ant-form-item:last-child {
   margin-bottom: 0;
 }
 
@@ -1024,22 +1022,19 @@
   padding-bottom: 7px;
 }
 
-.upload-info-panel .ant-form-item-row,
-.upload-status-field .ant-form-item-row {
+.upload-info-panel .ant-form-item-row {
   display: grid;
   grid-template-columns: 104px minmax(0, 1fr);
   align-items: start;
   gap: 14px;
 }
 
-.upload-info-panel .ant-form-item-label,
-.upload-status-field .ant-form-item-label {
+.upload-info-panel .ant-form-item-label {
   padding: 7px 0 0;
   text-align: left;
 }
 
-.upload-info-panel .ant-form-item-control,
-.upload-status-field .ant-form-item-control {
+.upload-info-panel .ant-form-item-control {
   min-width: 0;
   justify-self: end;
   width: min(100%, 520px);
@@ -1087,7 +1082,6 @@
 .upload-drama-modal .ant-input,
 .upload-drama-modal .ant-input-number,
 .episode-count-field,
-.upload-status-select,
 .tag-input-field {
   width: 100%;
   background: #ffffff;
@@ -1099,7 +1093,6 @@
 .upload-drama-modal .ant-input,
 .upload-drama-modal .ant-input-number-input,
 .episode-count-field,
-.upload-status-select,
 .tag-input-field {
   min-height: 34px;
   color: #111827;
@@ -1175,7 +1168,6 @@
 .upload-drama-modal .ant-input-number-focused,
 .upload-drama-modal .ant-input-number:focus-within,
 .episode-count-field:focus-within,
-.upload-status-select:focus-within,
 .category-dropdown.open .category-dropdown-trigger,
 .category-dropdown-trigger:focus,
 .category-dropdown-trigger:focus-visible,
@@ -1380,8 +1372,8 @@
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 34px;
-  padding: 4px 38px 4px 10px;
+  min-height: 38px;
+  padding: 4px 42px 4px 10px;
   color: #344054;
   text-align: left;
   background: #ffffff;
@@ -1403,6 +1395,7 @@
   flex: 1;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
   min-width: 0;
 }
 
@@ -1420,7 +1413,7 @@
 .tag-input-field > span {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
   height: 24px;
   padding: 0 9px;
@@ -1492,6 +1485,8 @@
 .tag-input-field {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   min-height: 38px;
   padding: 4px 42px 4px 10px;
   position: relative;
@@ -1563,28 +1558,6 @@
 
 .upload-drama-modal .ant-switch.ant-switch-checked .ant-switch-handle {
   inset-inline-start: calc(100% - 16px) !important;
-}
-
-.upload-status-field {
-  max-width: none;
-}
-
-.upload-status-select {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-inline: 12px;
-  border: 1px solid #dfe4ee;
-  background: #ffffff;
-}
-
-.upload-status-select span {
-  color: #344054;
-}
-
-.upload-status-select .anticon {
-  color: #667085;
-  transform: rotate(90deg);
 }
 
 .upload-drama-footer {
@@ -2701,6 +2674,47 @@
   font-weight: 800;
 }
 
+.publish-pending-panel {
+  flex: 0 0 500px;
+  height: 500px;
+  min-height: 500px;
+  max-height: 500px;
+}
+
+.publish-pending-panel .ant-table-wrapper,
+.publish-pending-panel .ant-spin-nested-loading,
+.publish-pending-panel .ant-spin-container,
+.publish-pending-panel .ant-table,
+.publish-pending-panel .ant-table-container,
+.publish-pending-panel .ant-table-content {
+  min-height: 0;
+}
+
+.publish-pending-panel .ant-table-body {
+  max-height: 320px !important;
+  overflow-y: auto !important;
+}
+
+.publish-pending-panel .analysis-list-pagination {
+  margin-top: auto;
+}
+
+.publish-pending-panel .analysis-filter-actions .publish-one-click-action.ant-btn {
+  width: auto;
+  padding-inline: 16px;
+  color: #ffffff;
+  font-weight: 700;
+  background: #1558ff;
+  border-color: #1558ff;
+}
+
+.publish-pending-panel .analysis-filter-actions .publish-one-click-action.ant-btn:hover,
+.publish-pending-panel .analysis-filter-actions .publish-one-click-action.ant-btn:focus {
+  color: #ffffff !important;
+  background: #0f4be8 !important;
+  border-color: #0f4be8 !important;
+}
+
 .publish-content-name {
   overflow: hidden;
   color: #344054;
@@ -2710,18 +2724,15 @@
   white-space: nowrap;
 }
 
-.publish-content-table,
 .publish-record-table {
   width: 100%;
 }
 
-.publish-content-table .ant-table,
 .publish-record-table .ant-table {
   color: #344054;
   background: #ffffff;
 }
 
-.publish-content-table .ant-table-thead > tr > th,
 .publish-record-table .ant-table-thead > tr > th {
   padding-block: 10px;
   color: #667085;
@@ -2731,13 +2742,11 @@
   border-bottom: 1px solid #eef0f4;
 }
 
-.publish-content-table .ant-table-tbody > tr > td,
 .publish-record-table .ant-table-tbody > tr > td {
   height: 56px;
   border-bottom: 1px solid #eef0f4;
 }
 
-.publish-content-table .ant-table-tbody > tr:hover > td,
 .publish-record-table .ant-table-tbody > tr:hover > td {
   background: #fafbff;
 }
@@ -2761,13 +2770,6 @@
   color: #ffffff;
   background: #1558ff;
   border-color: #1558ff;
-}
-
-.publish-pending-panel > p {
-  margin: 14px 0 0;
-  color: #667085;
-  font-size: 13px;
-  font-weight: 600;
 }
 
 .publish-config-grid {
@@ -2808,7 +2810,7 @@
   border-radius: 6px;
 }
 
-.publish-config-input.ant-input {
+.publish-config-input.ant-picker {
   width: 260px;
   max-width: 100%;
   height: 36px;
@@ -3120,7 +3122,7 @@
 
 .settings-tabs-shell {
   min-width: 0;
-  padding: 3px 15px ;
+  padding: 3px 15px 15px;
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;

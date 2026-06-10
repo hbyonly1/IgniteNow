@@ -22,7 +22,6 @@ import {
   EditOutlined,
   FileTextOutlined,
   InboxOutlined,
-  MoreOutlined,
   PlusOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
@@ -410,12 +409,6 @@ export default function DramasPage() {
                 <span>上传后立即开始分析</span>
               </Form.Item>
             </div>
-            <Form.Item label="默认发布状态" className="upload-status-field">
-              <div className="upload-status-select">
-                <span>草稿</span>
-                <MoreOutlined />
-              </div>
-            </Form.Item>
           </section>
 
           <div className="upload-drama-footer">
