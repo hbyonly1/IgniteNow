@@ -354,7 +354,7 @@ export default function DramasPage() {
     {
       title: '剧集',
       dataIndex: 'episode_no',
-      width: '24%',
+      width: '26%',
       render: (_, record) => (
         <div className="episode-list-title">
           <span className="episode-list-cover">
@@ -368,25 +368,9 @@ export default function DramasPage() {
       ),
     },
     {
-      title: '时长',
-      dataIndex: 'duration',
-      width: '8%',
-      render: formatDuration,
-    },
-    {
-      title: '视频状态',
-      key: 'video_url',
-      width: '10%',
-      render: (_, record) => (
-        <Tag className="drama-list-status" color={record.video_url ? 'success' : 'error'}>
-          {record.video_url ? '已上传' : '待上传'}
-        </Tag>
-      ),
-    },
-    {
       title: '字幕状态',
       key: 'subtitle',
-      width: '10%',
+      width: '16%',
       render: (_, record) => (
         <Tag className="drama-list-status" color={hasSubtitle(record) ? 'success' : 'warning'}>
           {hasSubtitle(record) ? '已识别' : '待识别'}
@@ -396,7 +380,7 @@ export default function DramasPage() {
     {
       title: 'AI分析状态',
       dataIndex: 'analyze_status',
-      width: '12%',
+      width: '18%',
       render: (value) => {
         const meta = analysisStatusMeta(value);
         return (
@@ -409,7 +393,7 @@ export default function DramasPage() {
     {
       title: '发布状态',
       key: 'publish_status',
-      width: '10%',
+      width: '16%',
       render: (_, record) => {
         const meta = publishStatusMeta(record);
         return (
@@ -425,23 +409,6 @@ export default function DramasPage() {
       width: '14%',
       render: (_, record) => formatDateTime(record.updated_at ?? record.created_at),
     },
-    {
-      title: '操作',
-      key: 'actions',
-      width: '12%',
-      align: 'right',
-      className: 'drama-list-action-column',
-      render: (_, record) => (
-        <div className="episode-row-actions" onClick={(event) => event.stopPropagation()}>
-          <Button type="link" className="drama-list-text-action" onClick={() => setSelectedEpisodeId(record.id)}>
-            查看
-          </Button>
-          <Button type="link" className="drama-list-text-action" onClick={() => message.info('剧集编辑接口待接入')}>
-            编辑
-          </Button>
-        </div>
-      ),
-    },
   ];
 
   return (
@@ -451,7 +418,6 @@ export default function DramasPage() {
           <div className="content-page-header">
             <div className="content-page-title">
               <h1>剧集管理</h1>
-              <p>管理短剧下的剧集信息、素材状态、字幕配置与发布进度</p>
             </div>
             <div className="content-toolbar">
               <Input
@@ -480,12 +446,12 @@ export default function DramasPage() {
             </div>
             <div className="episode-summary-main">
               <strong>{managingDrama.title}</strong>
-              <span>共 {episodes.length} 集</span>
-            </div>
-            <div className="episode-summary-stats">
-              <span>已发布 <strong>{episodes.filter((item) => Number(item.published_highlight_count ?? 0) > 0).length}</strong> 集</span>
-              <span>待分析 <strong>{episodes.filter((item) => item.analyze_status === 'pending').length}</strong> 集</span>
-              <span>分析完成 <strong>{episodes.filter((item) => item.analyze_status === 'success').length}</strong> 集</span>
+              <div className="episode-summary-stats">
+                <span className="neutral">共 <strong>{episodes.length}</strong> 集</span>
+                <span className="published">已发布 <strong>{episodes.filter((item) => Number(item.published_highlight_count ?? 0) > 0).length}</strong> 集</span>
+                <span className="pending">待分析 <strong>{episodes.filter((item) => item.analyze_status === 'pending').length}</strong> 集</span>
+                <span className="completed">分析完成 <strong>{episodes.filter((item) => item.analyze_status === 'success').length}</strong> 集</span>
+              </div>
             </div>
             <Button onClick={() => setManagingDrama(null)} icon={<ArrowLeftOutlined />}>
               返回短剧
@@ -498,7 +464,7 @@ export default function DramasPage() {
                 <span>已选择 {selectedEpisodeRowKeys.length} 项</span>
                 <div className="analysis-filter-actions">
                   <Button icon={<FileTextOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量设置字幕</Button>
-                  <Button icon={<SendOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量发起分析</Button>
+                  <Button icon={<SendOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量分析</Button>
                   <Button icon={<SendOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量发布</Button>
                 </div>
               </div>
@@ -534,9 +500,13 @@ export default function DramasPage() {
             </section>
 
             <aside className="episode-detail-panel">
-              <div className="episode-detail-header">
-                <span>当前选中：第 {selectedEpisode?.episode_no ?? '-'} 集</span>
-                <Button size="small" disabled={!selectedEpisode} onClick={() => setSelectedEpisodeId(null)}>取消选择</Button>
+              <div className="episode-detail-card">
+                <h3>快速操作</h3>
+                <div className="episode-quick-actions">
+                  <Button type="primary" icon={<PlayCircleOutlined />}>进入编辑短剧</Button>
+                  <Button icon={<UploadOutlined />}>替换视频</Button>
+                  <Button icon={<FileTextOutlined />}>管理字幕</Button>
+                </div>
               </div>
               <div className="episode-detail-card">
                 <h3>剧集信息</h3>
@@ -558,19 +528,10 @@ export default function DramasPage() {
                   <span style={{ width: `${episodeCompleteness(selectedEpisode)}%` }} />
                 </div>
                 <ul>
-                  <li><span>视频素材</span><Tag color={selectedEpisode?.video_url ? 'success' : 'error'}>{selectedEpisode?.video_url ? '已上传' : '待上传'}</Tag></li>
                   <li><span>字幕</span><Tag color={hasSubtitle(selectedEpisode ?? {}) ? 'success' : 'warning'}>{hasSubtitle(selectedEpisode ?? {}) ? '已识别' : '待识别'}</Tag></li>
                   <li><span>AI 分析</span><Tag color={analysisStatusMeta(selectedEpisode?.analyze_status).color}>{analysisStatusMeta(selectedEpisode?.analyze_status).label}</Tag></li>
                   <li><span>高光点</span><Tag color={Number(selectedEpisode?.draft_highlight_count ?? 0) + Number(selectedEpisode?.published_highlight_count ?? 0) > 0 ? 'success' : 'default'}>{Number(selectedEpisode?.draft_highlight_count ?? 0) + Number(selectedEpisode?.published_highlight_count ?? 0)} 个</Tag></li>
                 </ul>
-              </div>
-              <div className="episode-detail-card">
-                <h3>快速操作</h3>
-                <div className="episode-quick-actions">
-                  <Button type="primary" icon={<PlayCircleOutlined />}>进入编辑短剧</Button>
-                  <Button icon={<UploadOutlined />}>替换视频</Button>
-                  <Button icon={<FileTextOutlined />}>管理字幕</Button>
-                </div>
               </div>
             </aside>
           </div>

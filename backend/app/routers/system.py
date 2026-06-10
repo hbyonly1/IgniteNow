@@ -1,18 +1,83 @@
 import json
+from copy import deepcopy
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Episode, Job, JobLog, SystemLog
-from ..schemas import JOB_TYPES, JobCreate, JobLogOut, JobOut
+from ..models import Episode, Job, JobLog, SystemLog, SystemSetting
+from ..schemas import JOB_TYPES, JobCreate, JobLogOut, JobOut, SystemSettingsUpdate
 from ..services.auth_service import ADMIN_ROLE, UPLOADER_ROLE
 from ..services.job_service import create_and_enqueue_job, retry_job
-from .common import ok, require_roles
+from .common import ok, require_admin, require_roles
 
 router = APIRouter(prefix="/system")
 require_workspace_user = require_roles(ADMIN_ROLE, UPLOADER_ROLE)
+
+DEFAULT_SYSTEM_SETTINGS = {
+    "ai": {
+        "llm_enabled": False,
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini",
+        "timeout_seconds": 60,
+        "fallback_enabled": True,
+        "max_highlights_per_episode": 8,
+        "allow_force_reanalyze": True,
+    },
+    "review": {
+        "require_no_overlap": True,
+        "min_confidence": 0.65,
+        "default_highlight_status": "draft",
+        "confirm_bulk_publish": True,
+        "mark_low_confidence": True,
+    },
+    "player": {
+        "overlay_duration_ms": 4000,
+        "default_position": "bottom",
+        "enable_effects": True,
+        "record_ignore": True,
+        "anonymous_user_strategy": "persisted_device_id",
+    },
+    "upload": {
+        "max_video_size_mb": 500,
+        "allowed_subtitle_formats": "srt,vtt,txt",
+        "allow_without_subtitle": True,
+        "default_duration_seconds": 0,
+        "auto_enqueue_analysis": False,
+    },
+    "security": {
+        "jwt_expire_minutes": 120,
+        "uploader_can_create_drama": False,
+        "uploader_can_force_reanalyze": True,
+        "audit_admin_actions": True,
+        "session_expiry_action": "redirect_login",
+    },
+}
+
+
+def _load_settings(db: Session) -> dict:
+    settings = deepcopy(DEFAULT_SYSTEM_SETTINGS)
+    rows = db.query(SystemSetting).all()
+    updated_at = None
+    updated_by_user_id = None
+    for row in rows:
+        if row.key not in settings:
+            continue
+        try:
+            value = json.loads(row.value_json or "{}")
+        except json.JSONDecodeError:
+            value = {}
+        if isinstance(value, dict):
+            settings[row.key].update(value)
+        if not updated_at or row.updated_at > updated_at:
+            updated_at = row.updated_at
+            updated_by_user_id = row.updated_by_user_id
+    return {
+        "settings": settings,
+        "updated_at": updated_at.isoformat() if updated_at else None,
+        "updated_by_user_id": updated_by_user_id,
+    }
 
 
 def _can_access_episode(user, episode: Episode) -> bool:
@@ -40,6 +105,31 @@ def _can_access_job(db: Session, user, job: Job) -> bool:
 
 def _job_out(job: Job) -> dict:
     return JobOut.model_validate(job).model_dump()
+
+
+@router.get("/settings")
+def get_system_settings(user=Depends(require_admin), db: Session = Depends(get_db)):
+    return ok(_load_settings(db))
+
+
+@router.put("/settings")
+def update_system_settings(
+    payload: SystemSettingsUpdate,
+    user=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    incoming = payload.model_dump()
+    for key, defaults in DEFAULT_SYSTEM_SETTINGS.items():
+        value = dict(defaults)
+        value.update(incoming.get(key) or {})
+        row = db.get(SystemSetting, key)
+        if not row:
+            row = SystemSetting(key=key)
+            db.add(row)
+        row.value_json = json.dumps(value, ensure_ascii=False)
+        row.updated_by_user_id = user.id
+    db.commit()
+    return ok(_load_settings(db), "settings saved")
 
 
 @router.get("/jobs")

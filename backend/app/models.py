@@ -49,6 +49,7 @@ class Episode(Base):
     drama: Mapped[Drama] = relationship(back_populates="episodes")
     owner: Mapped[Optional[UserAccount]] = relationship()
     highlights: Mapped[list["HighlightEvent"]] = relationship(back_populates="episode", cascade="all, delete-orphan")
+    publish_items: Mapped[list["PublishJobItem"]] = relationship(back_populates="episode")
 
 
 class HighlightEvent(Base):
@@ -147,3 +148,46 @@ class SystemLog(Base):
     error_stack: Mapped[str] = mapped_column(Text, default="")
     context_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_setting"
+
+    key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    value_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user_account.id"), nullable=True, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    updated_by: Mapped[Optional[UserAccount]] = relationship()
+
+
+class PublishJob(Base):
+    __tablename__ = "publish_job"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    channel: Mapped[str] = mapped_column(String(32), default="android", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    scheduled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("user_account.id"), nullable=True, index=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    created_by: Mapped[Optional[UserAccount]] = relationship()
+    items: Mapped[list["PublishJobItem"]] = relationship(back_populates="publish_job", cascade="all, delete-orphan")
+
+
+class PublishJobItem(Base):
+    __tablename__ = "publish_job_item"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    publish_job_id: Mapped[int] = mapped_column(ForeignKey("publish_job.id"), nullable=False, index=True)
+    episode_id: Mapped[int] = mapped_column(ForeignKey("episode.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    error: Mapped[str] = mapped_column(Text, default="")
+    published_highlight_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    publish_job: Mapped[PublishJob] = relationship(back_populates="items")
+    episode: Mapped[Episode] = relationship(back_populates="publish_items")

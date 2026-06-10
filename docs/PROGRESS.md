@@ -1,5 +1,21 @@
 # 开发进度
 
+## 2026-06-11 阶段 1 真实数据收口
+
+### 已完成
+- AI 分析页删除无真实任务时的 mock 行和 mock 任务详情数据；任务列表改为真实空状态，提供“新建分析任务”和“去内容管理”入口，任务详情页只加载 `/api/system/jobs/{job_id}` 真实数据。
+- 新增 `GET /api/analysis/queue` 聚合接口，后端统一返回剧集、短剧、素材状态、高光计数和最新 AI 分析任务信息；`admin` 可查看全部，`uploader` 只查看自己名下剧集。
+- AI 分析页列表、指标、素材选择弹窗和任务详情页改为读取 `/api/analysis/queue`，不再由前端自行拼接 `/api/dramas`、`/api/episodes` 与 `/api/system/jobs`。
+
+### 已验证
+- `python -m pytest tests/test_analysis_queue.py tests/test_analysis.py tests/test_auth_permissions.py --basetemp .codex-pytest-tmp` 通过，覆盖分析队列聚合、分析服务和权限边界。
+- `npm exec eslint .` 在 `frontend/admin_web` 下通过。
+- `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+- `git diff --check` 通过。
+
+### 遗留问题
+- `/api/analysis/queue` 当前通过解析 `job.payload_json.episode_id` 获取最新任务；后续如任务量增长，应考虑在 `job` 表增加结构化 `episode_id` 索引字段。
+
 ## 2026-06-10 内容管理列表样式调整
 
 ### 已完成
@@ -32,6 +48,12 @@
 - 删除前端后台任务页面、路由和菜单入口；保留后端系统任务接口供 AI 分析等流程继续使用。
 - 删除后端同步 AI 分析接口 `POST /api/episodes/{episode_id}/analyze` 和 `AnalyzeRequest` schema；AI 分析触发统一通过 `/api/system/jobs` 创建 `ai_analyze` 异步任务，测试同步改为覆盖任务创建和 worker 执行路径。
 - 系统设置页补页面内标题，并将设置容器、表单行、按钮和输入控件调整为白底、8px 圆角、蓝色主色风格。
+- 内容管理的剧集管理页删除标题说明；短剧摘要改为标题下方展示总集数、已发布、待分析、分析完成，并按黑/绿/黄区分数字；剧集表格删除视频状态、时长和操作列，保留“字幕状态/AI分析状态/发布状态”表头；右侧详情面板移除当前选中、取消选择和素材完整度里的视频素材项，并将快速操作移到右侧栏最上方。
+- 继续收敛表格细节：压缩剧集表格表头上下内边距，修正短剧列表文字按钮尺寸。
+- 修复发布中心待发布表格行宽持续增大的布局问题：取消百分比列宽，移除复用的 AI 表格 class，改为标题列自适应、状态/更新时间/操作固定宽度，并对 Ant Table 根 wrapper、内部 table 和单元格做宽度收缩约束，操作按钮组固定收纳在操作列内。
+- 按 `BACKEND_MOBILE_INTEGRATION_PLAN.md` 阶段 1 开始推进真实数据接入：仪表盘替换占位页，接入 `/api/analytics/overview`、`/api/analytics/highlight-types`、`/api/analytics/top-actions` 和 `/api/analytics/highlight-ranking`，展示核心指标、类型分布、热门按钮和高光排行。
+- 发布中心真实化第一阶段落地：新增 `publish_job`、`publish_job_item` 模型与 SQL 表，新增 `/api/publish/pending-items`、`/api/publish/jobs`、`/api/publish/jobs/one-click`、发布单详情、重试和配置保存接口；管理后台发布中心替换静态 mock 数据，单行发布、一键发布、最近发布记录均接真实接口。
+- 系统设置真实读写第一阶段落地：新增 `system_setting` 模型与 SQL 表，新增 `/api/system/settings` 读写接口；系统设置页删除“接口未接入”占位提示，改为启动读取、保存落库、重新加载和恢复默认值。
 - 新增 `docs/BACKEND_MOBILE_INTEGRATION_PLAN.md`，基于当前前端页面、后端接口和 Flutter 播放端，整理后端后续开发、Android 衔接、前端增删改和测试补齐方案。
 
 ### 已验证
@@ -40,6 +62,9 @@
 - 尝试执行 `python3 -m pytest tests/test_analysis.py tests/test_auth_permissions.py tests/test_jobs.py`，当前系统 Python 缺少 `structlog`，测试在加载 `backend.app.main` 时中止，未进入用例执行。
 - `npm exec eslint .` 在 `frontend/admin_web` 下通过。
 - `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+- 本次仪表盘真实数据接入后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
+- 本次发布中心真实化后，`LOG_DIR=backend/logs python -m pytest tests --basetemp .codex-pytest-tmp` 通过，共 35 个测试；`npm exec eslint .` 与 `npm run build` 在 `frontend/admin_web` 下通过。
+- 本次系统设置真实读写接入后，`LOG_DIR=backend/logs python -m pytest tests --basetemp .codex-pytest-tmp` 通过，共 37 个测试；`python -m compileall backend/app`、`npm exec eslint .` 与 `npm run build` 在 `frontend/admin_web` 下通过。
 - 本次 AI 分析页批量操作区调整后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
 - 本次内容管理页高度修复后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
 - 本次内容管理表格宽度和操作列调整后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。

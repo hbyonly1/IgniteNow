@@ -10,6 +10,8 @@ ACTION_TYPES = {"impression", "click", "ignore"}
 EFFECTS = {"anger_bar", "screen_flash", "heart_rain", "boom_effect", "countdown"}
 JOB_TYPES = {"ai_analyze", "ocr_import"}
 JOB_STATUSES = {"pending", "running", "success", "failed", "canceled"}
+PUBLISH_CHANNELS = {"android"}
+PUBLISH_STATUSES = {"pending", "publishing", "success", "failed", "canceled"}
 
 
 class DramaCreate(BaseModel):
@@ -92,6 +94,44 @@ class JobOut(BaseModel):
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     error: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnalysisQueueJobOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: str
+    status: str
+    progress: float
+    payload_json: str
+    error: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnalysisQueueItemOut(BaseModel):
+    id: int
+    drama_id: int
+    owner_user_id: Optional[int] = None
+    episode_no: int
+    title: str
+    video_url: str
+    subtitle_url: str = ""
+    subtitle_content: str = ""
+    duration: float = 0
+    analyze_status: str
+    analyze_error: str = ""
+    draft_highlight_count: int = 0
+    published_highlight_count: int = 0
+    rejected_highlight_count: int = 0
+    archived_highlight_count: int = 0
+    drama_title: str
+    cover_url: str = ""
+    asset_status: str
+    subtitle_ready: bool
+    latest_job: Optional[AnalysisQueueJobOut] = None
     created_at: datetime
     updated_at: datetime
 
@@ -268,3 +308,70 @@ class EpisodeTimelineItem(BaseModel):
     click_count: int
     ignore_count: int
     click_rate: float
+
+
+class PublishConfigUpdate(BaseModel):
+    channel: str = "android"
+    scheduled_at: Optional[datetime] = None
+    strategy_tags: list[str] = Field(default_factory=list)
+    cover_checked: bool = True
+    summary_checked: bool = True
+
+
+class PublishJobCreate(BaseModel):
+    episode_ids: list[int] = Field(min_length=1)
+    channel: str = "android"
+    scheduled_at: Optional[datetime] = None
+
+
+class PublishPendingItemOut(BaseModel):
+    episode_id: int
+    drama_id: int
+    title: str
+    drama_title: str
+    episode_no: int
+    status: str
+    updated_at: datetime
+    draft_highlight_count: int
+    published_highlight_count: int
+    last_publish_job_id: Optional[int] = None
+    last_publish_status: Optional[str] = None
+    last_publish_error: str = ""
+
+
+class PublishJobItemOut(BaseModel):
+    id: int
+    publish_job_id: int
+    episode_id: int
+    status: str
+    error: str
+    published_highlight_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class PublishJobOut(BaseModel):
+    id: int
+    channel: str
+    status: str
+    scheduled_at: Optional[datetime] = None
+    created_by_user_id: Optional[int] = None
+    error: str
+    created_at: datetime
+    updated_at: datetime
+    item_count: int = 0
+    success_count: int = 0
+    failed_count: int = 0
+    content: str = ""
+    impressions: int = 0
+    clicks: int = 0
+    click_rate: float = 0
+    items: list[PublishJobItemOut] = Field(default_factory=list)
+
+
+class SystemSettingsUpdate(BaseModel):
+    ai: dict = Field(default_factory=dict)
+    review: dict = Field(default_factory=dict)
+    player: dict = Field(default_factory=dict)
+    upload: dict = Field(default_factory=dict)
+    security: dict = Field(default_factory=dict)

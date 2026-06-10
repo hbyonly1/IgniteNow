@@ -260,6 +260,54 @@ AI 高光识别只允许通过系统任务异步触发，不再提供同步 HTTP
 
 AI 高光识别默认逻辑：存在 `LLM_API_KEY` 时优先调用大模型；未配置或调用失败时使用本地关键词 fallback，保证演示链路可恢复。任务执行成功后会写入 `draft` 高光；执行失败时会写入 `job.error`，并按失败原因更新 `episode.analyze_status` / `episode.analyze_error`。
 
+### `GET /api/analysis/queue`
+
+AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admin` 返回全部剧集，`uploader` 只返回自己名下剧集。前端 AI 分析列表必须优先使用该接口，不再自行拼接 `/api/dramas`、`/api/episodes` 和 `/api/system/jobs`。
+
+查询参数：
+
+- `status`: 可选，`all`、`pending`、`processing`、`success`、`failed`，默认 `all`
+- `drama_id`: 可选，按短剧过滤
+- `limit`: 可选，默认 200，最大 500
+
+响应项：
+
+```json
+{
+  "id": 1,
+  "drama_id": 1,
+  "owner_user_id": 2,
+  "episode_no": 1,
+  "title": "第 1 集",
+  "video_url": "https://example.com/demo.mp4",
+  "subtitle_url": "",
+  "subtitle_content": "",
+  "duration": 30,
+  "analyze_status": "pending",
+  "analyze_error": "",
+  "draft_highlight_count": 1,
+  "published_highlight_count": 0,
+  "rejected_highlight_count": 0,
+  "archived_highlight_count": 0,
+  "drama_title": "逆光归来",
+  "cover_url": "",
+  "asset_status": "incomplete",
+  "subtitle_ready": false,
+  "latest_job": {
+    "id": 10,
+    "type": "ai_analyze",
+    "status": "running",
+    "progress": 42,
+    "payload_json": "{\"episode_id\":1}",
+    "error": "",
+    "created_at": "2026-06-11T10:00:00",
+    "updated_at": "2026-06-11T10:01:00"
+  },
+  "created_at": "2026-06-11T09:00:00",
+  "updated_at": "2026-06-11T10:01:00"
+}
+```
+
 ## 系统任务 API
 
 系统任务使用 RQ + Redis 执行，`job` / `job_log` 表保存后台可查询的业务状态与任务日志。第一版已接入 `ai_analyze`，`ocr_import` 作为后续任务类型预留。`verify_demo_chain` 不属于业务任务类型，演示链路验收继续通过 `backend/scripts/verify_demo_chain.py` 命令行脚本执行。
@@ -377,6 +425,62 @@ AI 高光识别默认逻辑：存在 `LLM_API_KEY` 时优先调用大模型；�
 ]
 ```
 
+### `GET /api/system/settings`
+
+读取系统设置。需要 `role=admin` 的 Bearer token。第一版设置按分组保存到 `system_setting` 表，未保存过时返回后端默认值。
+
+响应 `data`：
+
+```json
+{
+  "settings": {
+    "ai": {
+      "llm_enabled": false,
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "timeout_seconds": 60,
+      "fallback_enabled": true,
+      "max_highlights_per_episode": 8,
+      "allow_force_reanalyze": true
+    },
+    "review": {
+      "require_no_overlap": true,
+      "min_confidence": 0.65,
+      "default_highlight_status": "draft",
+      "confirm_bulk_publish": true,
+      "mark_low_confidence": true
+    },
+    "player": {
+      "overlay_duration_ms": 4000,
+      "default_position": "bottom",
+      "enable_effects": true,
+      "record_ignore": true,
+      "anonymous_user_strategy": "persisted_device_id"
+    },
+    "upload": {
+      "max_video_size_mb": 500,
+      "allowed_subtitle_formats": "srt,vtt,txt",
+      "allow_without_subtitle": true,
+      "default_duration_seconds": 0,
+      "auto_enqueue_analysis": false
+    },
+    "security": {
+      "jwt_expire_minutes": 120,
+      "uploader_can_create_drama": false,
+      "uploader_can_force_reanalyze": true,
+      "audit_admin_actions": true,
+      "session_expiry_action": "redirect_login"
+    }
+  },
+  "updated_at": "2026-06-10T15:00:00",
+  "updated_by_user_id": 1
+}
+```
+
+### `PUT /api/system/settings`
+
+保存系统设置。需要 `role=admin` 的 Bearer token。请求体与 `settings` 对象结构一致；后端会将缺失字段与默认值合并后按分组保存。第一版仅保证配置持久化和回显，具体运行时生效由后续功能逐项接入。
+
 ### `GET /api/episodes/{episode_id}/highlights`
 
 需要 `role=admin` 的 Bearer token。
@@ -461,6 +565,117 @@ AI 高光识别默认逻辑：存在 `LLM_API_KEY` 时优先调用大模型；�
 ### `GET /api/analytics/highlights/{highlight_id}`
 
 返回单条高光的互动统计。需要 `role=admin` 的 Bearer token。
+
+## 发布中心 API
+
+发布中心接口均需要 `role=admin` 的 Bearer token。第一版只支持 Android 渠道，播放端可见性仍由 `highlight_event.status=published` 控制，播放端接口不 join 发布单，也不下发发布单、审核人、失败原因等后台字段。
+
+### `GET /api/publish/pending-items?status=all`
+
+返回发布中心待发布内容列表。`status` 可选：`all`、`publishing`、`unpublished`、`failed`、`published`。
+
+响应项：
+
+```json
+{
+  "episode_id": 1,
+  "drama_id": 1,
+  "title": "她的逆袭人生 - 第 1 集",
+  "drama_title": "她的逆袭人生",
+  "episode_no": 1,
+  "status": "unpublished",
+  "updated_at": "2026-06-10T14:30:00",
+  "draft_highlight_count": 2,
+  "published_highlight_count": 1,
+  "last_publish_job_id": 10,
+  "last_publish_status": "failed",
+  "last_publish_error": ""
+}
+```
+
+### `POST /api/publish/jobs`
+
+创建发布任务。第一版 `channel` 仅允许 `android`。`scheduled_at` 为空或小于等于当前时间时立即执行；未来时间只创建 `pending` 发布单，不提前发布给播放端。
+
+```json
+{
+  "episode_ids": [1, 2],
+  "channel": "android",
+  "scheduled_at": null
+}
+```
+
+立即执行逻辑：
+
+1. 校验剧集存在。
+2. 校验剧集至少有 `draft` 或 `published` 高光。
+3. 将该剧集 `draft` 高光改为 `published`。
+4. 复用已发布高光重叠校验。
+5. 写入 `publish_job` 与 `publish_job_item` 状态。
+
+响应 `data` 包含发布单摘要与条目：
+
+```json
+{
+  "id": 1,
+  "channel": "android",
+  "status": "success",
+  "scheduled_at": null,
+  "created_by_user_id": 1,
+  "error": "",
+  "created_at": "2026-06-10T14:30:00",
+  "updated_at": "2026-06-10T14:30:01",
+  "item_count": 1,
+  "success_count": 1,
+  "failed_count": 0,
+  "content": "第 1 集",
+  "impressions": 0,
+  "clicks": 0,
+  "click_rate": 0,
+  "items": [
+    {
+      "id": 1,
+      "publish_job_id": 1,
+      "episode_id": 1,
+      "status": "success",
+      "error": "",
+      "published_highlight_count": 3,
+      "created_at": "2026-06-10T14:30:00",
+      "updated_at": "2026-06-10T14:30:01"
+    }
+  ]
+}
+```
+
+### `POST /api/publish/jobs/one-click`
+
+一键发布当前所有存在 `draft` 高光的剧集，等价于创建一个 Android 发布单。
+
+### `GET /api/publish/jobs?limit=20`
+
+返回最近发布记录与基础回流统计。响应项同 `POST /api/publish/jobs`，但 `items` 默认为空数组。
+
+### `GET /api/publish/jobs/{job_id}`
+
+返回单个发布单详情，包含 `items`。
+
+### `POST /api/publish/jobs/{job_id}/retry`
+
+重试失败发布单中的失败条目。
+
+### `POST /api/publish/items/{episode_id}/config`
+
+保存单集发布配置。第一版先作为配置接入点返回保存结果，后续可持久化定时、策略挂载、封面与简介检查。
+
+```json
+{
+  "channel": "android",
+  "scheduled_at": null,
+  "strategy_tags": ["高光弹幕"],
+  "cover_checked": true,
+  "summary_checked": true
+}
+```
 
 ### `POST /api/demo/seed`
 

@@ -15,7 +15,7 @@ export const workspaceModules = [
     description: '汇总短剧、剧集、高光和互动数据，快速查看系统核心指标。',
     icon: <BarChartOutlined />,
     roles: ['admin'],
-    status: '待接 API',
+    status: '数据看板',
   },
   {
     id: 'dramas',

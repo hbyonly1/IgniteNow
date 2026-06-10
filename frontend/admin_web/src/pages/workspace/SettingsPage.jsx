@@ -1,4 +1,5 @@
-import { Button, Form, Input, InputNumber, Select, Space, Switch, Tabs, message } from 'antd';
+import { useEffect, useState } from 'react';
+import { Button, Form, Input, InputNumber, Select, Space, Spin, Switch, Tabs, message } from 'antd';
 import {
   CloudUploadOutlined,
   LockOutlined,
@@ -7,6 +8,7 @@ import {
   SafetyCertificateOutlined,
   SaveOutlined,
 } from '@ant-design/icons';
+import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
 
 const settingGroups = [
   {
@@ -41,7 +43,7 @@ const settingGroups = [
   },
 ];
 
-const initialValues = {
+const defaultSettings = {
   ai: {
     llm_enabled: false,
     base_url: 'https://api.openai.com/v1',
@@ -81,12 +83,65 @@ const initialValues = {
   },
 };
 
-function disabledSave() {
-  message.info('设置保存接口尚未接入，本页先用于确认配置项和交互形态');
-}
-
 export default function SettingsPage() {
   const [form] = Form.useForm();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      const response = await apiClient.get('/api/system/settings');
+      form.setFieldsValue(response.data.data?.settings ?? defaultSettings);
+    } catch (error) {
+      message.error(apiErrorMessage(error, '系统设置加载失败'));
+      form.setFieldsValue(defaultSettings);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveSettings = async () => {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+      const response = await apiClient.put('/api/system/settings', values);
+      form.setFieldsValue(response.data.data?.settings ?? values);
+      message.success('系统设置已保存');
+    } catch (error) {
+      if (error?.errorFields) {
+        message.error('请检查设置表单');
+      } else {
+        message.error(apiErrorMessage(error, '系统设置保存失败'));
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/api/system/settings')
+      .then((response) => {
+        if (active) {
+          form.setFieldsValue(response.data.data?.settings ?? defaultSettings);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          message.error(apiErrorMessage(error, '系统设置加载失败'));
+          form.setFieldsValue(defaultSettings);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [form]);
 
   const tabItems = settingGroups.map((group) => ({
     key: group.key,
@@ -115,21 +170,31 @@ export default function SettingsPage() {
           <p>维护 AI、审核、播放端、上传与安全配置</p>
         </div>
       </div>
-      <Form form={form} layout="vertical" initialValues={initialValues}>
-        <div className="settings-tabs-shell">
-          <Tabs
-            className="settings-tabs"
-            tabBarExtraContent={
-              <Space>
-                <Button onClick={() => form.resetFields()}>恢复默认</Button>
-                <Button type="primary" icon={<SaveOutlined />} onClick={disabledSave}>
-                  保存设置
-                </Button>
-              </Space>
-            }
-            items={tabItems}
-          />
-        </div>
+      <Form form={form} layout="vertical" initialValues={defaultSettings}>
+        <Spin spinning={loading}>
+          <div className="settings-tabs-shell">
+            <Tabs
+              className="settings-tabs"
+              tabBarExtraContent={
+                <Space>
+                  <Button
+                    onClick={() => {
+                      form.setFieldsValue(defaultSettings);
+                      message.info('已恢复默认值，保存后生效');
+                    }}
+                  >
+                    恢复默认
+                  </Button>
+                  <Button onClick={loadSettings}>重新加载</Button>
+                  <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={saveSettings}>
+                    保存设置
+                  </Button>
+                </Space>
+              }
+              items={tabItems}
+            />
+          </div>
+        </Spin>
       </Form>
     </section>
   );

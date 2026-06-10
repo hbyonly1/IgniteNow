@@ -174,6 +174,11 @@ def update_episode(episode_id: int, payload: EpisodeUpdate, user=Depends(require
     return ok(_episode_out(db, episode), "episode updated")
 
 
+@router.post("/episodes/{episode_id}/analyze", dependencies=[Depends(require_workspace_user)])
+def removed_sync_analysis_endpoint(episode_id: int):
+    raise HTTPException(status_code=404, detail="sync analysis endpoint removed; use /api/system/jobs")
+
+
 @router.get("/episodes/{episode_id}/highlights", dependencies=[Depends(require_admin)])
 def list_highlights(episode_id: int, db: Session = Depends(get_db)):
     highlights = db.query(HighlightEvent).filter(HighlightEvent.episode_id == episode_id).order_by(HighlightEvent.start_time).all()

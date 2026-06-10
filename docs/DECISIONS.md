@@ -8,6 +8,7 @@
 - 移动端内容上传链路确定删除，包括 `POST /api/uploads/episodes`、上传页面和入口；Android 只保留播放端 API 与互动回传 API。
 - `verify_demo_chain` 从系统任务枚举删除，同名脚本继续作为命令行交付验收工具；`ocr_import` 暂保留为未实现的预留任务类型，不在 UI 暴露。
 - AI 分析触发统一收口到异步任务：删除同步 `POST /api/episodes/{episode_id}/analyze`，管理后台和 uploader 只能通过 `POST /api/system/jobs` 创建 `ai_analyze` 任务，worker 负责实际分析、失败落库和任务日志。
+- 2026-06-11 已落地 `GET /api/analysis/queue`，管理后台 AI 分析列表与详情页统一使用该聚合接口；任务创建、重跑、日志查看继续复用 `/api/system/jobs`。
 
 ## 2026-05-30 内容管理合并与剧集归属
 
@@ -31,6 +32,14 @@
 - 后续如果重新接入真实发布链路，应在保留 `published` 高光下发隔离规则的前提下，补充发布单、渠道、定时任务和回流状态的后端模型与 API 契约。
 - 前端工作台移除独立“后台任务”页面入口，避免演示主流程在 AI 分析、发布中心之外再暴露运维视角；后端 RQ 任务接口暂保留，继续支撑 AI 分析任务创建和状态查询。
 - 工作台不再使用统一外层 Header，各业务页面自行提供页面内标题和操作区，保证内容管理、AI 分析、发布中心、系统设置等页面视觉结构一致。
+- 发布中心真实化第一阶段新增 `publish_job` 与 `publish_job_item` 最小发布模型；`channel` 只允许 `android`，立即发布时将剧集 `draft` 高光改为 `published` 并写入发布单状态，未来时间只创建 `pending` 发布单。
+- Android 播放端可见性继续只依赖 `drama.status=active` 与 `highlight_event.status=published`，不让播放端接口依赖发布单 join，避免破坏现有移动端字段隔离和播放链路稳定性。
+
+## 2026-06-10 系统设置持久化范围
+
+- 系统设置第一阶段新增 `system_setting` 表与 `/api/system/settings` 读写接口，按 `ai`、`review`、`player`、`upload`、`security` 分组保存 JSON 配置。
+- 当前接口负责配置持久化和管理后台回显，不承诺所有字段立即驱动运行时行为；后续将按风险逐项接入，例如播放端浮层时长、上传限制和审核阈值。
+- 系统设置仅允许 `admin` 访问，`uploader` 不能读取或修改系统级配置，避免上传账号影响全局运行策略。
 
 ## 2026-05-28 数据库引擎切换至 PostgreSQL
 

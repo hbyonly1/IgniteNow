@@ -38,77 +38,6 @@ const stageMeta = {
   failed: { label: '失败', color: 'error' },
 };
 
-const mockAnalysisRow = {
-  id: 'mock-analysis-task',
-  is_mock: true,
-  task_no: 'T20240518-001',
-  drama_title: '她的逆袭人生',
-  title: '第 1 集',
-  episode_no: 1,
-  analyze_status: 'processing',
-  progress: 62,
-  cover_url: '',
-  latest_job: null,
-  subtitle_ready: true,
-  updated_at_display: new Date(),
-};
-
-const mockJobDetail = {
-  job: {
-    id: 'mock-analysis-task',
-    type: 'ai_analyze',
-    status: 'running',
-    progress: 62,
-    payload_json: JSON.stringify({ episode_id: 'mock-episode-001', force_reanalyze: false }),
-    created_at: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
-    updated_at: new Date().toISOString(),
-    finished_at: null,
-    error: '',
-  },
-  drama: {
-    id: 'mock-drama-001',
-    title: '她的逆袭人生',
-  },
-  episode: {
-    id: 'mock-episode-001',
-    episode_no: 1,
-    title: '第 1 集',
-    duration: 208,
-    draft_highlight_count: 6,
-    published_highlight_count: 0,
-  },
-  logs: [
-    {
-      id: 'mock-log-1',
-      level: 'info',
-      message: '字幕解析完成，识别到 42 条时间轴片段',
-      context_json: '{"subtitle_segments":42}',
-      created_at: new Date(Date.now() - 1000 * 60 * 7).toISOString(),
-    },
-    {
-      id: 'mock-log-2',
-      level: 'info',
-      message: '剧情分段完成，正在生成高光候选',
-      context_json: '{"chapter_count":5,"candidate_count":12}',
-      created_at: new Date(Date.now() - 1000 * 60 * 4).toISOString(),
-    },
-    {
-      id: 'mock-log-3',
-      level: 'info',
-      message: '模型推理进行中，当前进度 62%',
-      context_json: '{}',
-      created_at: new Date().toISOString(),
-    },
-  ],
-  previewHighlights: [
-    { id: 1, time: '00:18-00:26', summary: '女主质问男主', type: '冲突', confidence: '96%', status: '已确认', tone: 'orange', position: 9 },
-    { id: 2, time: '01:02-01:10', summary: '身份揭露', type: '反转', confidence: '98%', status: '已确认', tone: 'blue', position: 32 },
-    { id: 3, time: '01:26-01:34', summary: '女主内心动摇', type: '心动', confidence: '93%', status: '已确认', tone: 'pink', position: 43 },
-    { id: 4, time: '02:05-02:12', summary: '情绪失控', type: '爆点', confidence: '91%', status: '待复核', tone: 'red', position: 63 },
-    { id: 5, time: '02:48-02:56', summary: '男主真心告白', type: '心动', confidence: '88%', status: '分析中', tone: 'pink', position: 84 },
-  ],
-};
-
 function parsePayload(value) {
   try {
     return JSON.parse(value || '{}');
@@ -155,10 +84,7 @@ function coverText(title) {
   return String(title || '短剧').slice(0, 2);
 }
 
-function previewRowsForEpisode(episode, job, isMockJob) {
-  if (isMockJob) {
-    return mockJobDetail.previewHighlights;
-  }
+function previewRowsForEpisode(episode, job) {
   const draftCount = Number(episode?.draft_highlight_count ?? 0);
   const publishedCount = Number(episode?.published_highlight_count ?? 0);
   const count = Math.max(3, Math.min(5, draftCount + publishedCount || Math.round((job?.progress ?? 0) / 20)));
@@ -188,9 +114,7 @@ export default function AnalyzePage() {
 
 function AnalyzeQueue() {
   const navigate = useNavigate();
-  const [dramas, setDramas] = useState([]);
-  const [episodes, setEpisodes] = useState([]);
-  const [jobs, setJobs] = useState([]);
+  const [queueItems, setQueueItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [query, setQuery] = useState('');
@@ -206,17 +130,10 @@ function AnalyzeQueue() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [dramasResponse, episodesResponse, jobsResponse] = await Promise.all([
-        apiClient.get('/api/dramas'),
-        apiClient.get('/api/episodes'),
-        apiClient.get('/api/system/jobs', { params: { type: 'ai_analyze', limit: 200 } }),
-      ]);
-      const nextDramas = dramasResponse.data.data ?? [];
-      const nextEpisodes = episodesResponse.data.data ?? [];
-      setDramas(nextDramas);
-      setEpisodes(nextEpisodes);
-      setJobs(jobsResponse.data.data ?? []);
-      setSelectedEpisodeId((current) => current ?? nextEpisodes.find(hasSubtitle)?.id ?? nextEpisodes[0]?.id ?? null);
+      const response = await apiClient.get('/api/analysis/queue', { params: { limit: 500 } });
+      const nextItems = response.data.data ?? [];
+      setQueueItems(nextItems);
+      setSelectedEpisodeId((current) => current ?? nextItems.find(hasSubtitle)?.id ?? nextItems[0]?.id ?? null);
     } catch (error) {
       message.error(apiErrorMessage(error, 'AI 分析任务加载失败'));
     } finally {
@@ -228,38 +145,25 @@ function AnalyzeQueue() {
     Promise.resolve().then(loadData);
   }, [loadData]);
 
-  const dramaMap = useMemo(() => new Map(dramas.map((drama) => [drama.id, drama])), [dramas]);
-
-  const latestJobByEpisode = useMemo(() => {
+  const dramas = useMemo(() => {
     const map = new Map();
-    jobs.forEach((job) => {
-      const episodeId = parsePayload(job.payload_json).episode_id;
-      if (!episodeId) {
-        return;
-      }
-      const current = map.get(episodeId);
-      if (!current || new Date(job.created_at) > new Date(current.created_at)) {
-        map.set(episodeId, job);
-      }
+    queueItems.forEach((item) => {
+      map.set(item.drama_id, { id: item.drama_id, title: item.drama_title, cover_url: item.cover_url });
     });
-    return map;
-  }, [jobs]);
+    return Array.from(map.values());
+  }, [queueItems]);
 
   const rows = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    const nextRows = episodes.map((episode, index) => {
-      const drama = dramaMap.get(episode.drama_id);
-      const latestJob = latestJobByEpisode.get(episode.id);
+    const nextRows = queueItems.map((episode, index) => {
+      const latestJob = episode.latest_job;
       const progress = progressForEpisode(episode, latestJob);
-      const updatedAt = latestJob?.updated_at ?? latestJob?.created_at ?? episode.updated_at ?? episode.created_at;
+      const updatedAt = episode.updated_at ?? latestJob?.updated_at ?? latestJob?.created_at ?? episode.created_at;
       return {
         ...episode,
         task_no: `T${String(updatedAt ? new Date(updatedAt).getFullYear() : 2024)}${String(index + 1).padStart(4, '0')}`,
-        drama,
-        drama_title: drama?.title ?? `短剧 #${episode.drama_id}`,
-        cover_url: drama?.cover_url ?? '',
         latest_job: latestJob,
-        subtitle_ready: hasSubtitle(episode),
+        subtitle_ready: Boolean(episode.subtitle_ready ?? hasSubtitle(episode)),
         progress,
         updated_at_display: updatedAt,
       };
@@ -277,24 +181,24 @@ function AnalyzeQueue() {
       })
       .sort((a, b) => new Date(b.updated_at_display ?? 0) - new Date(a.updated_at_display ?? 0));
 
-    return filteredRows.length ? filteredRows : [mockAnalysisRow];
-  }, [dramaMap, episodes, latestJobByEpisode, query, statusFilter]);
+    return filteredRows;
+  }, [queueItems, query, statusFilter]);
 
   const metrics = useMemo(() => {
-    const processing = episodes.filter((episode) => episode.analyze_status === 'processing').length;
-    const pending = episodes.filter((episode) => episode.analyze_status === 'pending').length;
-    const highlights = episodes.reduce(
+    const processing = queueItems.filter((episode) => episode.analyze_status === 'processing').length;
+    const pending = queueItems.filter((episode) => episode.analyze_status === 'pending').length;
+    const highlights = queueItems.reduce(
       (total, episode) => total + Number(episode.draft_highlight_count ?? 0) + Number(episode.published_highlight_count ?? 0),
       0,
     );
-    const finished = episodes.filter((episode) => episode.analyze_status === 'success').length;
-    const confidence = episodes.length ? Math.round((finished / episodes.length) * 1000) / 10 : 0;
+    const finished = queueItems.filter((episode) => episode.analyze_status === 'success').length;
+    const confidence = queueItems.length ? Math.round((finished / queueItems.length) * 1000) / 10 : 0;
     return { processing, pending, highlights, confidence };
-  }, [episodes]);
+  }, [queueItems]);
 
   const selectedEpisode = useMemo(
-    () => episodes.find((episode) => episode.id === selectedEpisodeId) ?? episodes[0] ?? null,
-    [episodes, selectedEpisodeId],
+    () => queueItems.find((episode) => episode.id === selectedEpisodeId) ?? queueItems[0] ?? null,
+    [queueItems, selectedEpisodeId],
   );
 
   const pageSize = 10;
@@ -305,21 +209,18 @@ function AnalyzeQueue() {
     [effectivePage, rows],
   );
   const selectedRows = useMemo(
-    () => rows.filter((item) => selectedRowKeys.includes(item.id) && !item.is_mock),
+    () => rows.filter((item) => selectedRowKeys.includes(item.id)),
     [rows, selectedRowKeys],
   );
   const hasSelectedRows = selectedRows.length > 0;
 
   const assetRows = useMemo(() => {
     const keyword = assetQuery.trim().toLowerCase();
-    return episodes
+    return queueItems
       .map((episode) => {
-        const drama = dramaMap.get(episode.drama_id);
-        const subtitleReady = hasSubtitle(episode);
+        const subtitleReady = Boolean(episode.subtitle_ready ?? hasSubtitle(episode));
         return {
           ...episode,
-          drama_title: drama?.title ?? `短剧 #${episode.drama_id}`,
-          cover_url: drama?.cover_url ?? '',
           subtitle_ready: subtitleReady,
           asset_completion: subtitleReady ? 96 : 62,
         };
@@ -337,7 +238,7 @@ function AnalyzeQueue() {
         return true;
       })
       .sort((a, b) => Number(b.subtitle_ready) - Number(a.subtitle_ready) || a.episode_no - b.episode_no);
-  }, [assetDramaFilter, assetQuery, dramaMap, episodes, onlyReadyAssets]);
+  }, [assetDramaFilter, assetQuery, queueItems, onlyReadyAssets]);
 
   const submitAnalysis = async () => {
     if (!selectedEpisode) {
@@ -424,9 +325,6 @@ function AnalyzeQueue() {
   };
 
   const submitSingleRetry = async (episode) => {
-    if (episode.is_mock) {
-      return;
-    }
     setLoading(true);
     try {
       await apiClient.post('/api/system/jobs', {
@@ -487,20 +385,15 @@ function AnalyzeQueue() {
             size="small"
             className="analysis-icon-action"
             icon={<ReloadOutlined />}
-            disabled={record.is_mock}
             onClick={() => submitSingleRetry(record)}
           />
           <Button
             size="small"
             className="analysis-detail-action"
-            disabled={!record.latest_job && !record.is_mock}
+            disabled={!record.latest_job}
             onClick={() => {
               if (record.latest_job) {
                 navigate(`/workspace/analyze/jobs/${record.latest_job.id}`);
-                return;
-              }
-              if (record.is_mock) {
-                navigate(`/workspace/analyze/jobs/${record.id}`);
               }
             }}
           >
@@ -604,9 +497,21 @@ function AnalyzeQueue() {
           rowSelection={{
             selectedRowKeys,
             onChange: setSelectedRowKeys,
-            getCheckboxProps: (record) => ({ disabled: record.is_mock }),
           }}
           pagination={false}
+          locale={{
+            emptyText: (
+              <div className="analysis-empty-state">
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无真实分析任务" />
+                <div className="analysis-empty-actions">
+                  <Button type="primary" icon={<FileSearchOutlined />} onClick={() => setTaskModalOpen(true)}>
+                    新建分析任务
+                  </Button>
+                  <Button onClick={() => navigate('/workspace/dramas')}>去内容管理</Button>
+                </div>
+              </div>
+            ),
+          }}
         />
         <div className="analysis-list-pagination">
           <span>共 {rows.length} 条</span>
@@ -724,7 +629,6 @@ function MetricCard({ icon, tone, label, value, hint }) {
 
 function AnalyzeJobDetail({ jobId }) {
   const navigate = useNavigate();
-  const isMockJob = jobId === mockAnalysisRow.id;
   const [job, setJob] = useState(null);
   const [logs, setLogs] = useState([]);
   const [episode, setEpisode] = useState(null);
@@ -732,26 +636,19 @@ function AnalyzeJobDetail({ jobId }) {
   const [loading, setLoading] = useState(false);
 
   const loadDetail = useCallback(async () => {
-    if (isMockJob) {
-      setJob(mockJobDetail.job);
-      setLogs(mockJobDetail.logs);
-      setEpisode(mockJobDetail.episode);
-      setDrama(mockJobDetail.drama);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
-      const [jobResponse, logsResponse, dramasResponse, episodesResponse] = await Promise.all([
+      const [jobResponse, logsResponse, queueResponse] = await Promise.all([
         apiClient.get(`/api/system/jobs/${jobId}`),
         apiClient.get(`/api/system/jobs/${jobId}/logs`),
-        apiClient.get('/api/dramas'),
-        apiClient.get('/api/episodes'),
+        apiClient.get('/api/analysis/queue', { params: { limit: 500 } }),
       ]);
       const nextJob = jobResponse.data.data;
       const payload = parsePayload(nextJob.payload_json);
-      const nextEpisode = (episodesResponse.data.data ?? []).find((item) => item.id === payload.episode_id);
-      const nextDrama = (dramasResponse.data.data ?? []).find((item) => item.id === nextEpisode?.drama_id);
+      const nextEpisode = (queueResponse.data.data ?? []).find((item) => item.id === payload.episode_id);
+      const nextDrama = nextEpisode
+        ? { id: nextEpisode.drama_id, title: nextEpisode.drama_title, cover_url: nextEpisode.cover_url }
+        : null;
       setJob(nextJob);
       setLogs(logsResponse.data.data ?? []);
       setEpisode(nextEpisode ?? null);
@@ -761,7 +658,7 @@ function AnalyzeJobDetail({ jobId }) {
     } finally {
       setLoading(false);
     }
-  }, [isMockJob, jobId]);
+  }, [jobId]);
 
   useEffect(() => {
     Promise.resolve().then(loadDetail);
@@ -776,29 +673,27 @@ function AnalyzeJobDetail({ jobId }) {
   }
 
   const payload = parsePayload(job?.payload_json);
-  const previewRows = previewRowsForEpisode(episode, job, isMockJob);
+  const previewRows = previewRowsForEpisode(episode, job);
   const timelineLogs = logs.length
     ? logs
-    : isMockJob
-      ? mockJobDetail.logs
-      : [
-          {
-            id: 'job-created',
-            level: 'info',
-            message: '任务创建成功',
-            context_json: '{}',
-            created_at: job?.created_at,
-          },
-          {
-            id: 'job-current',
-            level: 'info',
-            message: `当前状态 ${job?.status ?? 'pending'}，进度 ${Math.round(job?.progress ?? 0)}%`,
-            context_json: '{}',
-            created_at: job?.updated_at ?? job?.created_at,
-          },
-        ];
-  const contentTags = isMockJob ? ['都市', '逆袭', '情感'] : ['高光识别', hasSubtitle(episode ?? {}) ? '字幕已同步' : '待补字幕', job?.status ?? 'pending'];
-  const duration = isMockJob ? '03:28' : formatDuration(episode?.duration);
+    : [
+        {
+          id: 'job-created',
+          level: 'info',
+          message: '任务创建成功',
+          context_json: '{}',
+          created_at: job?.created_at,
+        },
+        {
+          id: 'job-current',
+          level: 'info',
+          message: `当前状态 ${job?.status ?? 'pending'}，进度 ${Math.round(job?.progress ?? 0)}%`,
+          context_json: '{}',
+          created_at: job?.updated_at ?? job?.created_at,
+        },
+      ];
+  const contentTags = ['高光识别', hasSubtitle(episode ?? {}) ? '字幕已同步' : '待补字幕', job?.status ?? 'pending'];
+  const duration = formatDuration(episode?.duration);
   const createdClock = formatClock(job?.created_at);
   const coverTitle = drama?.title ?? '未知短剧';
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, DatePicker, Modal, Pagination, Radio, Table, Tag, message } from 'antd';
 import {
   CalendarOutlined,
@@ -8,72 +8,181 @@ import {
   SettingOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-
-const publishItems = [
-  { id: 'pub-ready-1', title: '她的逆袭人生 - 第 1 集', updated_at: '今天 14:30', publish_status: 'publishing' },
-  { id: 'pub-ready-2', title: '绿起长安 - 第 2 集', updated_at: '今天 13:20', publish_status: 'unpublished' },
-  { id: 'pub-ready-3', title: '闪婚总裁太会宠 - 第 3 集', updated_at: '昨天 20:18', publish_status: 'failed' },
-  { id: 'pub-ready-4', title: '重生之商界女王 - 第 1 集', updated_at: '昨天 18:45', publish_status: 'unpublished' },
-];
-
-const recentRecords = [
-  { id: 'PUB-20240517-104', content: '心动24小时 第2集', channel: 'Android 播放端', result: '已上线', flow: '回流正常', resultTone: 'success', flowTone: 'success' },
-  { id: 'PUB-20240517-098', content: '暗夜心跳 第7集', channel: 'Android 播放端', result: '已上线', flow: '回流延迟', resultTone: 'success', flowTone: 'warning' },
-  { id: 'PUB-20240516-076', content: '千金归来计划 第5集', channel: 'Android 播放端', result: '发布失败', flow: '需重试', resultTone: 'error', flowTone: 'error' },
-  { id: 'PUB-20240516-052', content: '她的逆袭人生 第0集预告', channel: 'Android 播放端', result: '已上线', flow: '数据良好', resultTone: 'success', flowTone: 'blue' },
-];
-
-const publishMetrics = [
-  { label: '待发布', value: 14, hint: '待完成最终检查', icon: <CalendarOutlined />, tone: 'blue' },
-  { label: '发布中', value: 3, hint: '渠道同步进行中', icon: <CloudUploadOutlined />, tone: 'purple' },
-  { label: '已发布', value: 48, hint: '本周新增 +12', icon: <CheckCircleOutlined />, tone: 'green' },
-  { label: '异常回流', value: 2, hint: '需要人工处理', icon: <WarningOutlined />, tone: 'red' },
-];
+import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
 
 const publishStatusMeta = {
   publishing: { label: '发布中', color: 'processing' },
   unpublished: { label: '未发布', color: 'default' },
+  published: { label: '已发布', color: 'success' },
   failed: { label: '失败', color: 'error' },
 };
 
+const publishJobStatusMeta = {
+  pending: { label: '待发布', tone: 'warning' },
+  publishing: { label: '发布中', tone: 'blue' },
+  success: { label: '已上线', tone: 'success' },
+  failed: { label: '发布失败', tone: 'error' },
+  canceled: { label: '已取消', tone: 'default' },
+};
+
+function formatDateTime(value) {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${month}-${day} ${hour}:${minute}`;
+}
+
+function formatPercent(value) {
+  return `${Math.round(Number(value ?? 0) * 100)}%`;
+}
+
+async function fetchPublishCenter(statusFilter) {
+  const [itemsResponse, jobsResponse] = await Promise.all([
+    apiClient.get('/api/publish/pending-items', { params: { status: statusFilter } }),
+    apiClient.get('/api/publish/jobs', { params: { limit: 10 } }),
+  ]);
+  return {
+    publishItems: itemsResponse.data.data ?? [],
+    recentRecords: jobsResponse.data.data ?? [],
+  };
+}
+
 export default function HighlightsPage() {
-  const [selectedRowKeys, setSelectedRowKeys] = useState([publishItems[0].id]);
+  const [publishItems, setPublishItems] = useState([]);
+  const [recentRecords, setRecentRecords] = useState([]);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [configOpen, setConfigOpen] = useState(false);
-  const [configItem, setConfigItem] = useState(publishItems[0]);
+  const [configItem, setConfigItem] = useState(null);
+  const [scheduledAt, setScheduledAt] = useState(null);
+  const [loading, setLoading] = useState(true);
   const pageSize = 6;
-  const filteredItems = useMemo(
-    () => publishItems.filter((item) => statusFilter === 'all' || item.publish_status === statusFilter),
-    [statusFilter],
-  );
+  const filteredItems = publishItems;
   const effectivePage = Math.min(currentPage, Math.max(1, Math.ceil(filteredItems.length / pageSize)));
   const pagedItems = useMemo(
     () => filteredItems.slice((effectivePage - 1) * pageSize, effectivePage * pageSize),
     [effectivePage, filteredItems],
   );
   const selectedItems = useMemo(
-    () => publishItems.filter((item) => selectedRowKeys.includes(item.id)),
-    [selectedRowKeys],
+    () => publishItems.filter((item) => selectedRowKeys.includes(item.episode_id)),
+    [publishItems, selectedRowKeys],
   );
-  const activeItem = configItem ?? selectedItems[0] ?? publishItems[0];
+  const activeItem = configItem ?? selectedItems[0] ?? publishItems[0] ?? null;
+
+  const publishMetrics = useMemo(() => {
+    const waitCount = publishItems.filter((item) => item.status === 'unpublished').length;
+    const publishingCount = publishItems.filter((item) => item.status === 'publishing').length;
+    const publishedCount = publishItems.filter((item) => item.status === 'published').length;
+    const failedCount = publishItems.filter((item) => item.status === 'failed').length;
+    return [
+      { label: '待发布', value: waitCount, hint: '待完成最终检查', icon: <CalendarOutlined />, tone: 'blue' },
+      { label: '发布中', value: publishingCount, hint: '渠道同步进行中', icon: <CloudUploadOutlined />, tone: 'purple' },
+      { label: '已发布', value: publishedCount, hint: 'Android 可见内容', icon: <CheckCircleOutlined />, tone: 'green' },
+      { label: '异常回流', value: failedCount, hint: '需要人工处理', icon: <WarningOutlined />, tone: 'red' },
+    ];
+  }, [publishItems]);
+
+  const loadPublishCenter = async (nextStatus = statusFilter) => {
+    setLoading(true);
+    try {
+      const data = await fetchPublishCenter(nextStatus);
+      setPublishItems(data.publishItems);
+      setRecentRecords(data.recentRecords);
+    } catch (error) {
+      message.error(apiErrorMessage(error, '发布中心数据加载失败'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    fetchPublishCenter('all')
+      .then((data) => {
+        if (!active) {
+          return;
+        }
+        setPublishItems(data.publishItems);
+        setRecentRecords(data.recentRecords);
+      })
+      .catch((error) => {
+        if (active) {
+          message.error(apiErrorMessage(error, '发布中心数据加载失败'));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const openConfig = (item) => {
     setConfigItem(item);
+    setScheduledAt(null);
     setConfigOpen(true);
+  };
+
+  const publishEpisodes = async (episodeIds) => {
+    if (!episodeIds.length) {
+      message.info('请选择待发布内容');
+      return;
+    }
+    try {
+      await apiClient.post('/api/publish/jobs', {
+        episode_ids: episodeIds,
+        channel: 'android',
+        scheduled_at: scheduledAt,
+      });
+      message.success('发布任务已提交');
+      setConfigOpen(false);
+      setSelectedRowKeys([]);
+      loadPublishCenter();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '发布任务提交失败'));
+    }
+  };
+
+  const savePublishConfig = async () => {
+    if (!activeItem) {
+      return;
+    }
+    try {
+      await apiClient.post(`/api/publish/items/${activeItem.episode_id}/config`, {
+        channel: 'android',
+        scheduled_at: scheduledAt,
+        strategy_tags: ['高光弹幕', '投票选择', '心动打点'],
+        cover_checked: true,
+        summary_checked: true,
+      });
+      message.success('发布配置已保存');
+    } catch (error) {
+      message.error(apiErrorMessage(error, '发布配置保存失败'));
+    }
   };
 
   const pendingColumns = [
     {
       title: '内容名称',
       dataIndex: 'title',
-      width: '42%',
       render: (value) => <strong className="publish-content-name">{value}</strong>,
     },
     {
       title: '状态',
-      dataIndex: 'publish_status',
-      width: '12%',
+      dataIndex: 'status',
+      width: 104,
       render: (value) => {
         const meta = publishStatusMeta[value] ?? publishStatusMeta.unpublished;
         return (
@@ -86,20 +195,21 @@ export default function HighlightsPage() {
     {
       title: '最后更新时间',
       dataIndex: 'updated_at',
-      width: '18%',
+      width: 132,
+      render: formatDateTime,
     },
     {
       title: '操作',
       key: 'actions',
-      width: '28%',
+      width: 176,
       align: 'right',
-      className: 'analysis-action-column',
+      className: 'publish-action-column',
       render: (_, record) => (
-        <div className="analysis-row-actions publish-row-actions">
+        <div className="publish-row-actions">
           <Button icon={<SettingOutlined />} onClick={() => openConfig(record)}>
             修改配置
           </Button>
-          <Button type="primary" onClick={() => message.success(`${record.title} 发布任务已提交`)}>
+          <Button type="primary" onClick={() => publishEpisodes([record.episode_id])}>
             发布
           </Button>
         </div>
@@ -108,20 +218,37 @@ export default function HighlightsPage() {
   ];
 
   const recordColumns = [
-    { title: '发布单号', dataIndex: 'id', width: 170 },
+    {
+      title: '发布单号',
+      dataIndex: 'id',
+      width: 120,
+      render: (value) => `PUB-${value}`,
+    },
     { title: '内容', dataIndex: 'content' },
-    { title: '渠道', dataIndex: 'channel', width: 150 },
+    {
+      title: '渠道',
+      dataIndex: 'channel',
+      width: 150,
+      render: (value) => (value === 'android' ? 'Android 播放端' : value),
+    },
     {
       title: '上线结果',
-      dataIndex: 'result',
+      dataIndex: 'status',
       width: 120,
-      render: (value, record) => <Tag className={`publish-record-tag ${record.resultTone}`}>{value}</Tag>,
+      render: (value) => {
+        const meta = publishJobStatusMeta[value] ?? publishJobStatusMeta.pending;
+        return <Tag className={`publish-record-tag ${meta.tone}`}>{meta.label}</Tag>;
+      },
     },
     {
       title: '数据回流',
-      dataIndex: 'flow',
+      key: 'flow',
       width: 120,
-      render: (value, record) => <Tag className={`publish-record-tag ${record.flowTone}`}>{value}</Tag>,
+      render: (_, record) => (
+        <Tag className={`publish-record-tag ${record.click_rate > 0 ? 'success' : 'blue'}`}>
+          {record.impressions} 曝光 / {formatPercent(record.click_rate)}
+        </Tag>
+      ),
     },
   ];
 
@@ -147,7 +274,7 @@ export default function HighlightsPage() {
         ))}
       </div>
 
-      <section className="analysis-table-panel publish-pending-panel">
+      <section className="publish-pending-panel">
         <div className="analysis-filterbar">
           <Radio.Group
             className="analysis-status-tabs"
@@ -155,6 +282,7 @@ export default function HighlightsPage() {
             onChange={(event) => {
               setStatusFilter(event.target.value);
               setCurrentPage(1);
+              loadPublishCenter(event.target.value);
             }}
             optionType="button"
             buttonStyle="solid"
@@ -163,22 +291,36 @@ export default function HighlightsPage() {
               { label: '发布中', value: 'publishing' },
               { label: '未发布', value: 'unpublished' },
               { label: '失败', value: 'failed' },
+              { label: '已发布', value: 'published' },
             ]}
           />
           <div className="analysis-filter-actions">
-            <Button icon={<ReloadOutlined />} onClick={() => message.success('待发布内容已刷新')} />
-            <Button type="primary" className="publish-one-click-action" onClick={() => message.success('已提交一键发布任务')}>
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => loadPublishCenter()} />
+            <Button
+              type="primary"
+              className="publish-one-click-action"
+              loading={loading}
+              onClick={async () => {
+                try {
+                  await apiClient.post('/api/publish/jobs/one-click');
+                  message.success('已提交一键发布任务');
+                  loadPublishCenter();
+                } catch (error) {
+                  message.error(apiErrorMessage(error, '一键发布失败'));
+                }
+              }}
+            >
               一键发布
             </Button>
           </div>
         </div>
         <Table
-          rowKey="id"
-          className="analysis-queue-table publish-content-table"
-          style={{ width: '100%', minWidth: '100%' }}
+          rowKey="episode_id"
+          className="publish-content-table"
           tableLayout="fixed"
           columns={pendingColumns}
           dataSource={pagedItems}
+          loading={loading}
           pagination={false}
           scroll={{ y: 320 }}
           rowSelection={{
@@ -217,7 +359,7 @@ export default function HighlightsPage() {
       >
         <div className="publish-config-grid">
           <span>标题</span>
-          <strong>{activeItem.title}</strong>
+          <strong>{activeItem?.title ?? '-'}</strong>
 
           <span>发布渠道</span>
           <Checkbox.Group
@@ -229,7 +371,13 @@ export default function HighlightsPage() {
           />
 
           <span>发布时间</span>
-          <DatePicker className="publish-config-input" showTime format="YYYY-MM-DD HH:mm" placeholder="选择发布时间" />
+          <DatePicker
+            className="publish-config-input"
+            showTime
+            format="YYYY-MM-DD HH:mm"
+            placeholder="选择发布时间"
+            onChange={(value) => setScheduledAt(value ? value.toISOString() : null)}
+          />
 
           <span>互动策略挂载</span>
           <div className="publish-strategy-tags">
@@ -245,14 +393,11 @@ export default function HighlightsPage() {
           </div>
         </div>
         <div className="publish-config-actions">
-          <Button onClick={() => setConfigOpen(false)}>保存配置</Button>
+          <Button onClick={savePublishConfig}>保存配置</Button>
           <Button>预览效果</Button>
           <Button
             type="primary"
-            onClick={() => {
-              setConfigOpen(false);
-              message.success('发布任务已提交');
-            }}
+            onClick={() => publishEpisodes(activeItem ? [activeItem.episode_id] : [])}
           >
             提交发布
           </Button>

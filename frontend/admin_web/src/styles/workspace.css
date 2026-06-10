@@ -819,11 +819,23 @@
 }
 
 .drama-list-text-action.ant-btn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: auto !important;
+  min-width: 0 !important;
   height: 30px;
-  padding-inline: 0;
+  padding-inline: 8px;
   color: #1558ff;
   font-size: 13px;
   font-weight: 600;
+  line-height: 28px;
+  border-radius: 6px;
+}
+
+.drama-list-text-action.ant-btn > span {
+  line-height: 1;
 }
 
 .drama-list-text-action.ant-btn:hover,
@@ -875,7 +887,8 @@
 
 .episode-summary-main {
   display: grid;
-  gap: 6px;
+  flex: 1;
+  gap: 7px;
   min-width: 0;
 }
 
@@ -888,7 +901,6 @@
   white-space: nowrap;
 }
 
-.episode-summary-main span,
 .episode-summary-stats span {
   color: #667085;
   font-size: 13px;
@@ -896,14 +908,31 @@
 
 .episode-summary-stats {
   display: flex;
-  flex: 1;
   flex-wrap: wrap;
   gap: 14px;
   min-width: 0;
 }
 
+.episode-summary-stats span {
+  white-space: nowrap;
+}
+
 .episode-summary-stats strong {
-  color: #1558ff;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.episode-summary-stats .neutral strong,
+.episode-summary-stats .completed strong {
+  color: #111827;
+}
+
+.episode-summary-stats .pending strong {
+  color: #f59e0b;
+}
+
+.episode-summary-stats .published strong {
+  color: #16a34a;
 }
 
 .episode-management-grid {
@@ -975,7 +1004,8 @@
 }
 
 .episode-table-panel .ant-table-thead > tr > th {
-  padding-block: 10px;
+  padding-block: 5px;
+  padding-inline: 12px;
   color: #6b7280;
   font-size: 13px;
   font-weight: 500;
@@ -2543,6 +2573,25 @@
   font-size: 12px;
 }
 
+.analysis-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 28px 0;
+}
+
+.analysis-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.analysis-empty-actions .ant-btn {
+  height: 32px;
+  border-radius: 6px;
+}
+
 .analysis-asset-item strong {
   overflow: hidden;
   color: #1f2937;
@@ -2658,6 +2707,146 @@
 
 .workflow-metrics .success strong {
   color: #287a4b;
+}
+
+.dashboard-page {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.dashboard-panel {
+  min-width: 0;
+  padding: 18px 20px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.dashboard-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dashboard-panel-header h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #111827;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.dashboard-panel-header h2 .anticon {
+  color: #1558ff;
+}
+
+.dashboard-bars {
+  display: grid;
+  gap: 14px;
+}
+
+.dashboard-bar-row {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-bar-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-bar-meta strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.dashboard-bar-track {
+  height: 8px;
+  overflow: hidden;
+  background: #eef2ff;
+  border-radius: 999px;
+}
+
+.dashboard-bar-track span {
+  display: block;
+  height: 100%;
+  background: #1558ff;
+  border-radius: inherit;
+}
+
+.dashboard-empty {
+  margin: 10px 0 6px;
+}
+
+.dashboard-ranking-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.dashboard-ranking-table .ant-table {
+  color: #344054;
+}
+
+.dashboard-ranking-table .ant-table-thead > tr > th {
+  padding-block: 10px;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 700;
+  background: #ffffff;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.dashboard-ranking-table .ant-table-tbody > tr > td {
+  height: 56px;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.dashboard-highlight-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dashboard-highlight-cell strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.dashboard-highlight-cell span {
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .production-toolbar {
@@ -3048,10 +3237,21 @@
 }
 
 .publish-pending-panel {
+  display: flex;
   flex: 0 0 500px;
+  flex-direction: column;
   height: 500px;
   min-height: 500px;
   max-height: 500px;
+  min-width: 0;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.publish-pending-panel .analysis-filterbar {
+  flex: 0 0 auto;
 }
 
 .publish-pending-panel .ant-table-wrapper,
@@ -3060,12 +3260,28 @@
 .publish-pending-panel .ant-table,
 .publish-pending-panel .ant-table-container,
 .publish-pending-panel .ant-table-content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
+}
+
+.publish-pending-panel .ant-table-wrapper,
+.publish-pending-panel .ant-spin-nested-loading,
+.publish-pending-panel .ant-spin-container {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.publish-pending-panel .ant-table {
+  flex: 1 1 auto;
 }
 
 .publish-pending-panel .ant-table-body {
   max-height: 320px !important;
   overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 
 .publish-pending-panel .analysis-list-pagination {
@@ -3089,6 +3305,7 @@
 }
 
 .publish-content-name {
+  display: block;
   overflow: hidden;
   color: #344054;
   font-size: 14px;
@@ -3101,9 +3318,54 @@
   width: 100%;
 }
 
+.publish-content-table.ant-table-wrapper,
+.publish-content-table .ant-spin-nested-loading,
+.publish-content-table .ant-spin-container,
+.publish-content-table .ant-table,
+.publish-content-table .ant-table-container,
+.publish-content-table .ant-table-content,
+.publish-content-table table {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.publish-content-table .ant-table-content > table {
+  table-layout: fixed !important;
+}
+
+.publish-content-table .ant-table {
+  color: #344054;
+  background: #ffffff;
+}
+
+.publish-content-table .ant-table-content,
+.publish-content-table .ant-table-body {
+  overflow-x: hidden !important;
+}
+
+.publish-content-table .ant-table-thead > tr > th {
+  padding-block: 10px;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 700;
+  background: #ffffff;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.publish-content-table .ant-table-tbody > tr > td {
+  height: 56px;
+  border-bottom: 1px solid #eef0f4;
+}
+
 .publish-record-table .ant-table {
   color: #344054;
   background: #ffffff;
+}
+
+.publish-record-table .ant-table-content,
+.publish-record-table .ant-table-body {
+  overflow-x: hidden !important;
 }
 
 .publish-record-table .ant-table-thead > tr > th {
@@ -3120,6 +3382,18 @@
   border-bottom: 1px solid #eef0f4;
 }
 
+.publish-content-table .ant-table-cell {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publish-content-table .ant-table-tbody > tr:hover > td {
+  background: #fafbff;
+}
+
 .publish-record-table .ant-table-tbody > tr:hover > td {
   background: #fafbff;
 }
@@ -3134,9 +3408,35 @@
 }
 
 .publish-row-actions {
-  display: inline-flex;
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.publish-row-actions .ant-btn {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.publish-content-table .publish-action-column {
+  padding-right: 12px !important;
+  text-align: right;
+}
+
+.publish-content-table th.publish-action-column {
+  padding-right: 18px !important;
+}
+
+.publish-content-table .publish-action-column .ant-btn {
+  height: 30px;
+  padding-inline: 8px;
+  font-size: 13px;
+  border-radius: 6px;
 }
 
 .publish-row-actions .ant-btn-primary {
@@ -3635,6 +3935,7 @@
   }
 
   .analysis-metrics,
+  .dashboard-metrics,
   .publish-metrics,
   .analysis-task-modal-body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3652,6 +3953,7 @@
   }
 
   .workflow-overview,
+  .dashboard-grid,
   .review-workbench {
     grid-template-columns: 1fr;
   }
@@ -3733,6 +4035,7 @@
   }
 
   .analysis-metrics,
+  .dashboard-metrics,
   .publish-metrics,
   .publish-config-grid,
   .publish-config-actions,
@@ -3767,11 +4070,13 @@
     overflow-x: auto;
   }
 
+  .dashboard-ranking-table,
   .publish-record-table,
   .publish-content-table {
     overflow-x: auto;
   }
 
+  .dashboard-ranking-table .ant-table,
   .publish-record-table .ant-table,
   .publish-content-table .ant-table {
     min-width: 680px;

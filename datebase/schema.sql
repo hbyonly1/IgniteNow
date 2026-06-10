@@ -99,6 +99,39 @@ CREATE TABLE IF NOT EXISTS job_log (
   FOREIGN KEY (job_id) REFERENCES job(id)
 );
 
+CREATE TABLE IF NOT EXISTS publish_job (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel VARCHAR(32) DEFAULT 'android',
+  status VARCHAR(32) DEFAULT 'pending',
+  scheduled_at DATETIME,
+  created_by_user_id INTEGER,
+  error TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by_user_id) REFERENCES user_account(id)
+);
+
+CREATE TABLE IF NOT EXISTS publish_job_item (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  publish_job_id INTEGER NOT NULL,
+  episode_id INTEGER NOT NULL,
+  status VARCHAR(32) DEFAULT 'pending',
+  error TEXT,
+  published_highlight_count INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (publish_job_id) REFERENCES publish_job(id),
+  FOREIGN KEY (episode_id) REFERENCES episode(id)
+);
+
+CREATE TABLE IF NOT EXISTS system_setting (
+  key VARCHAR(120) PRIMARY KEY,
+  value_json TEXT DEFAULT '{}',
+  updated_by_user_id INTEGER,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (updated_by_user_id) REFERENCES user_account(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_episode_drama ON episode(drama_id);
 CREATE INDEX IF NOT EXISTS idx_episode_owner_user ON episode(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_episode_analyze_status ON episode(analyze_status);
@@ -109,3 +142,10 @@ CREATE INDEX IF NOT EXISTS idx_job_type ON job(type);
 CREATE INDEX IF NOT EXISTS idx_job_status ON job(status);
 CREATE INDEX IF NOT EXISTS idx_job_rq_job_id ON job(rq_job_id);
 CREATE INDEX IF NOT EXISTS idx_job_log_job ON job_log(job_id);
+CREATE INDEX IF NOT EXISTS idx_publish_job_channel ON publish_job(channel);
+CREATE INDEX IF NOT EXISTS idx_publish_job_status ON publish_job(status);
+CREATE INDEX IF NOT EXISTS idx_publish_job_created_by ON publish_job(created_by_user_id);
+CREATE INDEX IF NOT EXISTS idx_publish_job_item_job ON publish_job_item(publish_job_id);
+CREATE INDEX IF NOT EXISTS idx_publish_job_item_episode ON publish_job_item(episode_id);
+CREATE INDEX IF NOT EXISTS idx_publish_job_item_status ON publish_job_item(status);
+CREATE INDEX IF NOT EXISTS idx_system_setting_updated_by ON system_setting(updated_by_user_id);
