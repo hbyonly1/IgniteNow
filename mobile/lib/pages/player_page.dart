@@ -226,7 +226,7 @@ class _PlayerPageState extends State<PlayerPage> {
                 // 2D emotion effect
                 EffectLayer(
                   effectKey: _effectKey,
-                  emotion: _effectEmotion,
+                  effect: _effectEmotion,
                   videoAspectRatio: controller.value.aspectRatio,
                   onTap: _replayEffect,
                 ),
