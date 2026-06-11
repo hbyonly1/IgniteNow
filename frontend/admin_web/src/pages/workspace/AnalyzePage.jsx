@@ -20,19 +20,25 @@ import {
   AimOutlined,
   ArrowLeftOutlined,
   CheckCircleOutlined,
+  CheckOutlined,
   ClockCircleOutlined,
+  CloseCircleOutlined,
   CloseOutlined,
   DownOutlined,
   FileSearchOutlined,
+  PlusOutlined,
   ReloadOutlined,
   RightOutlined,
   RotateRightOutlined,
+  SaveOutlined,
   SearchOutlined,
   SendOutlined,
   StarOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
 import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
+import { HighlightTimelineEditor } from '../../components/HighlightTimelineEditor.jsx';
+import { timelineLaneForHighlight } from '../../components/highlightTimelineUtils.js';
 
 const stageMeta = {
   pending: { label: '未分析', color: 'default' },
@@ -57,7 +63,6 @@ const highlightStatusMeta = {
 };
 
 const editableHighlightStatuses = ['draft', 'published', 'rejected'];
-
 function parsePayload(value) {
   try {
     return JSON.parse(value || '{}');
@@ -452,7 +457,7 @@ function AnalyzeQueue() {
     {
       title: '短剧名称 / 剧集',
       dataIndex: 'drama_title',
-      width: '42%',
+      width: '40%',
       render: (_, record) => {
         if (record.is_drama_group) {
           const isExpanded = expandedRowKeys.includes(record.id);
@@ -497,7 +502,7 @@ function AnalyzeQueue() {
     },
     {
       title: '分析进度 / 阶段',
-      width: '16%',
+      width: '15%',
       render: (_, record) => {
         if (record.is_drama_group) {
           return `${record.finished_episodes} / ${record.total_episodes} 集`;
@@ -509,7 +514,7 @@ function AnalyzeQueue() {
     },
     {
       title: '整体状态',
-      width: '22%',
+      width: '18%',
       render: (_, record) => {
         if (!record.is_drama_group) return null;
         if (record.processing_episodes > 0) return <Tag color="processing">分析中 ({record.processing_episodes})</Tag>;
@@ -521,13 +526,14 @@ function AnalyzeQueue() {
     {
       title: '操作',
       key: 'actions',
-      width: '20%',
+      width: 260,
       align: 'right',
       className: 'analysis-action-column',
       render: (_, record) => {
         if (record.is_drama_group) {
           return (
             <Button
+              className="analysis-drama-action"
               type="primary"
               size="small"
               disabled={record.pending_episodes === 0 && record.failed_episodes === 0}
@@ -799,12 +805,58 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [selectedId, setSelectedId] = useState(null);
-  const [lastSelectedId, setLastSelectedId] = useState(null);
-  const [editorMode, setEditorMode] = useState('edit');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [keyword, setKeyword] = useState('');
   const [draft, setDraft] = useState(null);
+  const [dirtyDrafts, setDirtyDrafts] = useState({});
+  const [historyStack, setHistoryStack] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+  const [selectedHighlightKeys, setSelectedHighlightKeys] = useState([]);
+
+  const snapshotTimeline = useCallback(() => ({
+    highlights,
+    dirtyDrafts,
+    selectedId,
+    draft,
+  }), [dirtyDrafts, draft, highlights, selectedId]);
+
+  const pushHistory = useCallback(() => {
+    const snapshot = snapshotTimeline();
+    setHistoryStack((current) => [...current.slice(-24), snapshot]);
+    setRedoStack([]);
+  }, [snapshotTimeline]);
+
+  const restoreSnapshot = (snapshot) => {
+    setHighlights(snapshot.highlights);
+    setDirtyDrafts(snapshot.dirtyDrafts);
+    setSelectedId(snapshot.selectedId);
+    setDraft(snapshot.draft);
+  };
+
+  const undoTimeline = () => {
+    setHistoryStack((current) => {
+      if (!current.length) {
+        return current;
+      }
+      const previous = current[current.length - 1];
+      setRedoStack((redoCurrent) => [...redoCurrent, snapshotTimeline()]);
+      restoreSnapshot(previous);
+      return current.slice(0, -1);
+    });
+  };
+
+  const redoTimeline = () => {
+    setRedoStack((current) => {
+      if (!current.length) {
+        return current;
+      }
+      const next = current[current.length - 1];
+      setHistoryStack((historyCurrent) => [...historyCurrent, snapshotTimeline()]);
+      restoreSnapshot(next);
+      return current.slice(0, -1);
+    });
+  };
 
   const loadHighlights = useCallback(async () => {
     if (!episode?.id) {
@@ -815,11 +867,12 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
       const response = await apiClient.get(`/api/episodes/${episode.id}/highlights`);
       const nextHighlights = response.data.data ?? [];
       setHighlights(nextHighlights);
-      const nextSelected = nextHighlights[0] ?? null;
-      setSelectedId(nextSelected?.id ?? null);
-      setLastSelectedId(nextSelected?.id ?? null);
-      setEditorMode('edit');
-      setDraft(nextSelected ? highlightToDraft(nextSelected) : null);
+      setSelectedId(null);
+      setDraft(null);
+      setDirtyDrafts({});
+      setHistoryStack([]);
+      setRedoStack([]);
+      setSelectedHighlightKeys([]);
     } catch (error) {
       message.error(apiErrorMessage(error, '高光列表加载失败'));
     } finally {
@@ -833,14 +886,28 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
     }
   }, [loadHighlights, open]);
 
-  const selectedHighlight = useMemo(
-    () => highlights.find((highlight) => highlight.id === selectedId) ?? null,
-    [highlights, selectedId],
-  );
+  const displayHighlights = useMemo(() => highlights.map((highlight) => {
+    const itemDraft = dirtyDrafts[highlight.id];
+    if (itemDraft?._deleted) {
+      return null;
+    }
+    if (!itemDraft) {
+      return highlight;
+    }
+    return {
+      ...highlight,
+      start_time: parseTimecode(itemDraft.start_time),
+      end_time: parseTimecode(itemDraft.end_time),
+      highlight_type: itemDraft.highlight_type,
+      confidence: Number(itemDraft.confidence ?? 0) / 100,
+      reason: itemDraft.reason,
+      status: itemDraft.status,
+    };
+  }).filter(Boolean), [dirtyDrafts, highlights]);
 
   const filteredHighlights = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
-    return highlights.filter((highlight) => {
+    return displayHighlights.filter((highlight) => {
       if (typeFilter !== 'all' && highlight.highlight_type !== typeFilter) {
         return false;
       }
@@ -852,50 +919,198 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
       }
       return true;
     });
-  }, [highlights, keyword, statusFilter, typeFilter]);
+  }, [displayHighlights, keyword, statusFilter, typeFilter]);
 
   const stats = useMemo(() => ({
-    all: highlights.length,
-    published: highlights.filter((item) => item.status === 'published').length,
-    draft: highlights.filter((item) => item.status === 'draft').length,
-    rejected: highlights.filter((item) => item.status === 'rejected').length,
-  }), [highlights]);
+    all: displayHighlights.length,
+    published: displayHighlights.filter((item) => item.status === 'published').length,
+    draft: displayHighlights.filter((item) => item.status === 'draft').length,
+    rejected: displayHighlights.filter((item) => item.status === 'rejected').length,
+  }), [displayHighlights]);
+
+  const hasUnsavedChanges = Object.keys(dirtyDrafts).length > 0;
+
+  const requestClose = () => {
+    if (!hasUnsavedChanges) {
+      onClose();
+      return;
+    }
+    Modal.confirm({
+      title: '有未保存的高光修改',
+      content: '关闭后，当前已修改但未保存的高光内容会丢失。',
+      okText: '放弃修改',
+      cancelText: '继续编辑',
+      okButtonProps: { danger: true },
+      onOk: onClose,
+    });
+  };
 
   const selectHighlight = (highlight) => {
-    setEditorMode('edit');
     setSelectedId(highlight.id);
-    setLastSelectedId(highlight.id);
-    setDraft(highlightToDraft(highlight));
+    setDraft(dirtyDrafts[highlight.id] ?? highlightToDraft(highlight));
     if (videoRef.current) {
       videoRef.current.currentTime = Number(highlight.start_time ?? 0);
     }
   };
 
-  const syncDraftTime = (field) => {
-    const nextTime = formatTimecode(videoRef.current?.currentTime ?? currentTime ?? 0);
-    setDraft((current) => current ? { ...current, [field]: nextTime } : current);
-  };
-
-  const saveHighlight = async (override = {}) => {
-    if (editorMode !== 'edit' || !selectedHighlight || !draft) {
+  const writeDraftForHighlight = (highlight, patch, options = {}) => {
+    if (!highlight?.id) {
       return;
     }
-    const payload = {
-      start_time: parseTimecode(draft.start_time),
-      end_time: parseTimecode(draft.end_time),
-      highlight_type: draft.highlight_type,
-      reason: draft.reason,
-      confidence: Number(draft.confidence ?? 0) / 100,
-      status: draft.status,
-      ...override,
-    };
+    if (options.history !== false) {
+      pushHistory();
+    }
+    const baseDraft = dirtyDrafts[highlight.id] ?? highlightToDraft(highlight);
+    const nextDraft = { ...baseDraft, ...patch };
+    setDirtyDrafts((current) => ({ ...current, [highlight.id]: nextDraft }));
+    setHighlights((current) => current.map((item) => (item.id === highlight.id ? { ...item, ...draftToHighlightFields(nextDraft) } : item)));
+    if (options.select) {
+      setSelectedId(highlight.id);
+      setDraft(nextDraft);
+    } else if (selectedId === highlight.id) {
+      setDraft(nextDraft);
+    }
+  };
+
+  const updateDraft = (patch, options = {}) => {
+    if (!draft || !selectedId) {
+      return;
+    }
+    if (options.history !== false) {
+      pushHistory();
+    }
+    const nextDraft = { ...draft, ...patch };
+    setDraft(nextDraft);
+    setDirtyDrafts((current) => ({ ...current, [selectedId]: nextDraft }));
+    setHighlights((current) => current.map((item) => (item.id === selectedId ? { ...item, ...draftToHighlightFields(nextDraft) } : item)));
+  };
+
+  const syncDraftTime = (field) => {
+    const nextTime = formatTimecode(videoRef.current?.currentTime ?? currentTime ?? 0);
+    updateDraft({ [field]: nextTime });
+  };
+
+  const draftToPayload = (nextDraft, override = {}) => ({
+    start_time: parseTimecode(nextDraft.start_time),
+    end_time: parseTimecode(nextDraft.end_time),
+    highlight_type: nextDraft.highlight_type,
+    reason: nextDraft.reason,
+    confidence: Number(nextDraft.confidence ?? 0) / 100,
+    status: nextDraft.status,
+    ...override,
+  });
+
+  const saveCurrentChange = async () => {
+    if (!selectedId || !draft) {
+      message.warning('请先选择需要保存的高光');
+      return;
+    }
+    const nextDraft = dirtyDrafts[selectedId] ?? draft;
+    if (parseTimecode(nextDraft.end_time) <= parseTimecode(nextDraft.start_time)) {
+      message.warning('结束时间必须大于开始时间');
+      return;
+    }
     setSaving(true);
     try {
-      const response = await apiClient.put(`/api/highlights/${selectedHighlight.id}`, payload);
-      const updated = response.data.data;
-      setHighlights((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setDraft(highlightToDraft(updated));
-      message.success('高光已保存');
+      if (String(selectedId).startsWith('tmp-')) {
+        const response = await apiClient.post(`/api/episodes/${episode.id}/highlights`, {
+          start_time: parseTimecode(nextDraft.start_time),
+          end_time: parseTimecode(nextDraft.end_time),
+          highlight_type: nextDraft.highlight_type,
+          emotion: nextDraft.emotion || '人工添加',
+          intensity: 0.5,
+          confidence: Number(nextDraft.confidence ?? 0) / 100,
+          trigger_score: 0.5,
+          reason: nextDraft.reason || '人工添加高光点',
+          button_text: '精彩片段',
+          effect: 'boom_effect',
+          status: nextDraft.status,
+        });
+        const created = response.data.data;
+        setHighlights((current) => [
+          ...current.filter((item) => item.id !== selectedId),
+          created,
+        ].sort((a, b) => a.start_time - b.start_time));
+        setSelectedId(created.id);
+        setDraft(highlightToDraft(created));
+        setSelectedHighlightKeys((current) => current.map((key) => (key === selectedId ? created.id : key)));
+        setDirtyDrafts((current) => {
+          const next = { ...current };
+          delete next[selectedId];
+          return next;
+        });
+      } else {
+        const response = await apiClient.put(`/api/highlights/${selectedId}`, draftToPayload(nextDraft));
+        const updated = response.data.data;
+        setHighlights((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+        setDraft(highlightToDraft(updated));
+        setDirtyDrafts((current) => {
+          const next = { ...current };
+          delete next[selectedId];
+          return next;
+        });
+      }
+      message.success('当前高光已保存');
+      await onUpdated?.();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '当前高光保存失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveAllChanges = async () => {
+    const entries = Object.entries(dirtyDrafts);
+    if (!entries.length) {
+      message.info('没有需要保存的修改');
+      return;
+    }
+    const invalid = entries.find(([, item]) => !item._deleted && parseTimecode(item.end_time) <= parseTimecode(item.start_time));
+    if (invalid) {
+      message.warning('结束时间必须大于开始时间');
+      return;
+    }
+    setSaving(true);
+    try {
+      const responses = await Promise.all(entries.map(([id, item]) => {
+        if (item._deleted) {
+          return apiClient.put(`/api/highlights/${id}`, draftToPayload(item, { status: 'archived' }));
+        }
+        if (String(id).startsWith('tmp-')) {
+          return apiClient.post(`/api/episodes/${episode.id}/highlights`, {
+            start_time: parseTimecode(item.start_time),
+            end_time: parseTimecode(item.end_time),
+            highlight_type: item.highlight_type,
+            emotion: item.emotion || '人工添加',
+            intensity: 0.5,
+            confidence: Number(item.confidence ?? 0) / 100,
+            trigger_score: 0.5,
+            reason: item.reason || '人工添加高光点',
+            button_text: '精彩片段',
+            effect: 'boom_effect',
+            status: item.status,
+          });
+        }
+        return apiClient.put(`/api/highlights/${id}`, draftToPayload(item));
+      }));
+      const deletedIds = new Set(entries.filter(([, item]) => item._deleted).map(([id]) => id));
+      const tempIds = new Set(entries.filter(([id]) => String(id).startsWith('tmp-')).map(([id]) => id));
+      const updatedItems = responses.map((response) => response.data.data).filter((item) => item.status !== 'archived');
+      const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
+      setHighlights((current) => [
+        ...current.filter((item) => !deletedIds.has(String(item.id)) && !tempIds.has(String(item.id))).map((item) => updatedMap.get(item.id) ?? item),
+        ...updatedItems.filter((item) => !current.some((currentItem) => currentItem.id === item.id)),
+      ].sort((a, b) => a.start_time - b.start_time));
+      if (selectedId && updatedMap.has(selectedId)) {
+        setDraft(highlightToDraft(updatedMap.get(selectedId)));
+      } else if (selectedId && (deletedIds.has(String(selectedId)) || tempIds.has(String(selectedId)))) {
+        setSelectedId(null);
+        setDraft(null);
+      }
+      setDirtyDrafts({});
+      setHistoryStack([]);
+      setRedoStack([]);
+      message.success(`已保存 ${updatedItems.length} 条高光修改`);
       await onUpdated?.();
     } catch (error) {
       message.error(apiErrorMessage(error, '高光保存失败'));
@@ -904,27 +1119,55 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
     }
   };
 
-  const updateHighlightRecord = async (record, override = {}) => {
-    const payload = {
-      start_time: record.start_time,
-      end_time: record.end_time,
-      highlight_type: record.highlight_type,
-      reason: record.reason,
-      confidence: record.confidence,
-      status: record.status,
-      ...override,
-    };
+  const updateSelectedHighlightsStatus = async (status) => {
+    const selectedRecords = displayHighlights.filter((item) => selectedHighlightKeys.includes(item.id));
+    if (!selectedRecords.length) {
+      message.warning('请先选择高光区间');
+      return;
+    }
     setSaving(true);
     try {
-      const response = await apiClient.put(`/api/highlights/${record.id}`, payload);
-      const updated = response.data.data;
-      setHighlights((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setSelectedId(updated.id);
-      setDraft(highlightToDraft(updated));
-      message.success('高光已保存');
+      const temporaryRecords = selectedRecords.filter((item) => String(item.id).startsWith('tmp-'));
+      const savedRecords = selectedRecords.filter((item) => !String(item.id).startsWith('tmp-'));
+      if (temporaryRecords.length) {
+        setHighlights((current) => current.map((item) => (
+          temporaryRecords.some((record) => record.id === item.id) ? { ...item, status } : item
+        )));
+        setDirtyDrafts((current) => {
+          const next = { ...current };
+          temporaryRecords.forEach((record) => {
+            next[record.id] = { ...(next[record.id] ?? highlightToDraft(record)), status };
+          });
+          return next;
+        });
+      }
+      if (savedRecords.length) {
+        const responses = await Promise.all(savedRecords.map((record) => apiClient.put(`/api/highlights/${record.id}`, {
+          start_time: record.start_time,
+          end_time: record.end_time,
+          highlight_type: record.highlight_type,
+          reason: record.reason,
+          confidence: record.confidence,
+          status,
+        })));
+        const updatedItems = responses.map((response) => response.data.data);
+        const updatedMap = new Map(updatedItems.map((item) => [item.id, item]));
+        setHighlights((current) => current.map((item) => updatedMap.get(item.id) ?? item));
+        setDirtyDrafts((current) => {
+          const next = { ...current };
+          updatedItems.forEach((item) => {
+            delete next[item.id];
+          });
+          return next;
+        });
+        if (selectedId && updatedMap.has(selectedId)) {
+          setDraft(highlightToDraft(updatedMap.get(selectedId)));
+        }
+      }
+      message.success(status === 'published' ? '已通过选中高光' : '已拒绝选中高光');
       await onUpdated?.();
     } catch (error) {
-      message.error(apiErrorMessage(error, '高光保存失败'));
+      message.error(apiErrorMessage(error, '批量处理失败'));
     } finally {
       setSaving(false);
     }
@@ -963,88 +1206,131 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
         ? `${apiClient.defaults.baseURL}${rawVideoUrl}`
         : `${apiClient.defaults.baseURL}/api/player/episodes/${episode.id}/video`)
     : '';
-  const progressPercent = resolvedDuration ? Math.min(100, Math.max(0, (currentTime / resolvedDuration) * 100)) : 0;
   const selectedMeta = draft
     ? (highlightTypeMeta[draft.highlight_type] ?? highlightTypeMeta.conflict)
     : null;
-  const createStartTime = parseTimecode(draft?.start_time);
-  const createEndTime = parseTimecode(draft?.end_time);
-  const canCreateHighlight = editorMode !== 'create' || createEndTime > createStartTime;
 
-  const startCreateHighlight = () => {
+  const createOneSecondHighlight = () => {
     if (!episode?.id) {
       return;
     }
-    const timecode = formatTimecode(Math.max(0, Number(videoRef.current?.currentTime ?? currentTime ?? 0)));
-    setLastSelectedId(selectedId ?? lastSelectedId);
-    setSelectedId(null);
-    setEditorMode('create');
-    setDraft({
-      start_time: timecode,
-      end_time: timecode,
-      highlight_type: 'satisfying',
-      confidence: 50,
-      reason: '',
-      status: 'draft',
-    });
+    pushHistory();
+    let startTime = Math.max(0, Number(videoRef.current?.currentTime ?? currentTime ?? 0));
+    let endTime = startTime + 1;
+    if (resolvedDuration && endTime > resolvedDuration) {
+      endTime = resolvedDuration;
+      startTime = Math.max(0, endTime - 1);
+    }
+    if (endTime <= startTime) {
+      endTime = startTime + 1;
+    }
+    const created = {
+      id: `tmp-${Date.now()}`,
+      episode_id: episode.id,
+      start_time: startTime,
+      end_time: endTime,
+      highlight_type: draft?.highlight_type ?? 'satisfying',
+      emotion: '人工添加',
+      intensity: 0.5,
+      confidence: 0.5,
+      trigger_score: 0.5,
+      reason: draft?.reason || '人工添加高光点',
+      button_text: '精彩片段',
+      effect: 'boom_effect',
+      status: draft?.status ?? 'draft',
+    };
+    const nextDraft = highlightToDraft(created);
+    setHighlights((current) => [...current, created].sort((a, b) => a.start_time - b.start_time));
+    setDirtyDrafts((current) => ({ ...current, [created.id]: { ...nextDraft, emotion: '人工添加' } }));
+    setSelectedId(created.id);
+    setDraft(nextDraft);
+    if (videoRef.current) {
+      videoRef.current.currentTime = Number(created.start_time ?? 0);
+    }
+    message.success('已添加人工高光区间，保存后生效');
   };
 
-  const cancelCreateHighlight = () => {
-    const fallback = highlights.find((item) => item.id === lastSelectedId) ?? highlights[0] ?? null;
-    if (fallback) {
-      selectHighlight(fallback);
+  const deleteSelectedHighlight = () => {
+    const selected = displayHighlights.find((item) => item.id === selectedId);
+    if (!selected) {
+      message.warning('请先选择高光区间');
       return;
     }
-    setEditorMode('edit');
+    pushHistory();
+    if (String(selected.id).startsWith('tmp-')) {
+      setHighlights((current) => current.filter((item) => item.id !== selected.id));
+      setDirtyDrafts((current) => {
+        const next = { ...current };
+        delete next[selected.id];
+        return next;
+      });
+    } else {
+      const nextDraft = { ...(dirtyDrafts[selected.id] ?? highlightToDraft(selected)), _deleted: true };
+      setDirtyDrafts((current) => ({ ...current, [selected.id]: nextDraft }));
+    }
     setSelectedId(null);
     setDraft(null);
   };
 
-  const createHighlight = async () => {
-    if (!episode?.id || !draft) {
+  const splitSelectedHighlight = () => {
+    const selected = displayHighlights.find((item) => item.id === selectedId);
+    const splitTime = Number(videoRef.current?.currentTime ?? currentTime ?? 0);
+    if (!selected || splitTime <= selected.start_time || splitTime >= selected.end_time) {
+      message.warning('播放时间需要位于选中区间内部');
       return;
     }
-    const startTime = parseTimecode(draft.start_time);
-    const endTime = parseTimecode(draft.end_time);
-    if (endTime <= startTime) {
-      message.warning('结束时间必须大于开始时间');
-      return;
-    }
-    setSaving(true);
-    try {
-      const response = await apiClient.post(`/api/episodes/${episode.id}/highlights`, {
-        start_time: startTime,
-        end_time: endTime,
-        highlight_type: draft.highlight_type,
-        emotion: '人工添加',
-        intensity: 0.5,
-        confidence: 0.5,
-        trigger_score: 0.5,
-        reason: draft.reason || '人工添加高光点',
-        button_text: '精彩片段',
-        effect: 'boom_effect',
-        status: draft.status,
-      });
-      const created = response.data.data;
-      setHighlights((current) => [...current, created].sort((a, b) => a.start_time - b.start_time));
-      setEditorMode('edit');
-      setSelectedId(created.id);
-      setLastSelectedId(created.id);
-      setDraft(highlightToDraft(created));
-      message.success('已添加人工高光点');
-      await onUpdated?.();
-    } catch (error) {
-      message.error(apiErrorMessage(error, '人工添加失败'));
-    } finally {
-      setSaving(false);
-    }
+    pushHistory();
+    const leftDraft = { ...(dirtyDrafts[selected.id] ?? highlightToDraft(selected)), end_time: formatTimecode(splitTime) };
+    const right = {
+      ...selected,
+      id: `tmp-${Date.now()}`,
+      start_time: splitTime,
+      reason: selected.reason || '拆分高光区间',
+      status: 'draft',
+      emotion: selected.emotion || '人工添加',
+    };
+    const rightDraft = highlightToDraft(right);
+    setHighlights((current) => [...current.map((item) => (item.id === selected.id ? { ...item, end_time: splitTime } : item)), right].sort((a, b) => a.start_time - b.start_time));
+    setDirtyDrafts((current) => ({ ...current, [selected.id]: leftDraft, [right.id]: { ...rightDraft, emotion: right.emotion } }));
+    setSelectedId(right.id);
+    setDraft(rightDraft);
   };
 
-  const saveEditor = () => {
-    if (editorMode === 'create') {
-      return createHighlight();
+  const mergeAdjacentHighlight = () => {
+    const selected = displayHighlights.find((item) => item.id === selectedId);
+    if (!selected) {
+      message.warning('请先选择高光区间');
+      return;
     }
-    return saveHighlight();
+    const sameLane = displayHighlights
+      .filter((item) => timelineLaneForHighlight(item) === timelineLaneForHighlight(selected) && item.id !== selected.id)
+      .sort((a, b) => Math.abs(a.start_time - selected.end_time) - Math.abs(b.start_time - selected.end_time));
+    const target = sameLane.find((item) => Math.abs(item.start_time - selected.end_time) <= 3 || Math.abs(selected.start_time - item.end_time) <= 3);
+    if (!target) {
+      message.warning('没有可合并的相邻同轨道区间');
+      return;
+    }
+    pushHistory();
+    const mergedStart = Math.min(selected.start_time, target.start_time);
+    const mergedEnd = Math.max(selected.end_time, target.end_time);
+    const mergedDraft = {
+      ...(dirtyDrafts[selected.id] ?? highlightToDraft(selected)),
+      start_time: formatTimecode(mergedStart),
+      end_time: formatTimecode(mergedEnd),
+    };
+    setHighlights((current) => current
+      .filter((item) => item.id !== target.id)
+      .map((item) => (item.id === selected.id ? { ...item, start_time: mergedStart, end_time: mergedEnd } : item)));
+    setDirtyDrafts((current) => {
+      const next = { ...current, [selected.id]: mergedDraft };
+      if (String(target.id).startsWith('tmp-')) {
+        delete next[target.id];
+      } else {
+        next[target.id] = { ...(current[target.id] ?? highlightToDraft(target)), _deleted: true };
+      }
+      return next;
+    });
+    setDraft(mergedDraft);
   };
 
   return (
@@ -1052,36 +1338,34 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
       className="upload-drama-modal analysis-review-modal"
       title={null}
       open={open}
-      onCancel={onClose}
+      onCancel={requestClose}
       closable={false}
       footer={null}
       width="min(1480px, calc(100vw - 48px))"
       destroyOnHidden
     >
       <div className="upload-drama-header">
-        <div>
-          <h2>高光审核详情</h2>
+        <div className="analysis-review-titleline">
+          <h2>高光播放编辑器</h2>
           <p>基于视频内容识别的高光片段，可进行审核、修改、拒绝或手动添加高光点</p>
         </div>
-        <Button type="text" className="upload-drama-close" icon={<CloseOutlined />} onClick={onClose} />
+        <Button type="text" className="upload-drama-close" icon={<CloseOutlined />} onClick={requestClose} />
       </div>
 
       <div className="upload-drama-form analysis-review-form">
-        <section className="upload-drama-card highlight-review-summary">
-          <span className="highlight-review-cover">
-            {episode?.cover_url ? <img src={episode.cover_url} alt="" /> : <span>{coverText(episode?.drama_title)}</span>}
-          </span>
-          <strong>{episode?.drama_title ?? '-'}</strong>
-          <div><b>第 {episode?.episode_no ?? '-'} 集</b><span>集数</span></div>
-          <div><b>{formatDuration(duration)}</b><span>时长</span></div>
-          <div><b>{stageMeta[episode?.analyze_status]?.label ?? '-'}</b><span>分析状态</span></div>
-          <time>分析完成时间：{episode?.latest_job?.updated_at ? new Date(episode.latest_job.updated_at).toLocaleString() : '-'}</time>
-        </section>
-
         <div className="highlight-review-body">
           <section className="highlight-review-left">
+            <section className="upload-drama-card highlight-review-summary">
+              <span className="highlight-review-cover">
+                {episode?.cover_url ? <img src={episode.cover_url} alt="" /> : <span>{coverText(episode?.drama_title)}</span>}
+              </span>
+              <strong>{episode?.drama_title ?? '-'}</strong>
+              <div><b>第 {episode?.episode_no ?? '-'} 集</b><span>集数</span></div>
+              <div><b>{formatDuration(duration)}</b><span>时长</span></div>
+              <div><b>{stageMeta[episode?.analyze_status]?.label ?? '-'}</b><span>分析状态</span></div>
+              <time>分析完成时间：{episode?.latest_job?.updated_at ? new Date(episode.latest_job.updated_at).toLocaleString() : '-'}</time>
+            </section>
             <div className="upload-drama-card highlight-video-panel">
-              <h3>视频时间轴</h3>
               <div className="highlight-video-frame">
                 {videoUrl ? (
                   <video
@@ -1101,189 +1385,213 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
                   <div className="highlight-video-empty">暂无可播放视频</div>
                 )}
               </div>
-              <div className="highlight-review-timeline">
-                <div className="highlight-progress-track">
-                  <span className="highlight-progress-fill" style={{ width: `${progressPercent}%` }} />
-                  {highlights.map((highlight) => {
-                    const left = resolvedDuration ? Math.min(98, Math.max(2, (highlight.start_time / resolvedDuration) * 100)) : 8;
-                    const width = resolvedDuration ? Math.max(2, ((highlight.end_time - highlight.start_time) / resolvedDuration) * 100) : 5;
-                    const meta = highlightTypeMeta[highlight.highlight_type] ?? highlightTypeMeta.conflict;
-                    return (
-                      <button
-                        key={highlight.id}
-                        className={`highlight-range ${highlight.highlight_type}${highlight.id === selectedId ? ' active' : ''}`}
-                        style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}
-                        title={`${meta.label} ${formatRange(highlight)}`}
-                        type="button"
-                        onClick={() => selectHighlight(highlight)}
-                      >
-                        <span>{meta.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="highlight-timeline-axis">
-                  <span>{formatDuration(currentTime)}</span>
-                  <span>{formatDuration(resolvedDuration)}</span>
-                </div>
-              </div>
             </div>
-
-          <div className="upload-drama-card highlight-edit-panel">
-            <div className="highlight-edit-heading">
-              <h3>{editorMode === 'create' ? '新增高光' : '编辑高光'}</h3>
-              <div className="highlight-edit-heading-actions">
-                {editorMode === 'create' ? (
-                  <Button size="small" onClick={cancelCreateHighlight}>取消新增</Button>
-                ) : null}
-                <Button className="highlight-manual-action" size="small" type="primary" onClick={startCreateHighlight} loading={saving}>
-                  新增高光
-                </Button>
-              </div>
-            </div>
-            {draft ? (
-              <>
-                <div className={`highlight-edit-current ${draft.highlight_type}`}>
-                  <span>{editorMode === 'create' ? '正在新增' : '正在编辑'}：{selectedMeta?.label ?? '高光'}</span>
-                  <strong>{editorMode === 'edit' && selectedHighlight ? formatRange(selectedHighlight) : `${draft.start_time} - ${draft.end_time}`}</strong>
-                  <Tag color={highlightStatusMeta[draft.status]?.color}>{highlightStatusMeta[draft.status]?.label ?? draft.status}</Tag>
-                </div>
-                <div className="highlight-edit-grid">
-                  <label>
-                    <span className="highlight-field-title">
-                      <span>开始时间</span>
-                      <Button
-                        className="highlight-time-sync"
-                        icon={<AimOutlined />}
-                        size="small"
-                        type="text"
-                        onClick={() => syncDraftTime('start_time')}
-                      />
-                    </span>
-                    <Input value={draft.start_time} onChange={(event) => setDraft({ ...draft, start_time: event.target.value })} />
-                  </label>
-                  <label>
-                    <span className="highlight-field-title">
-                      <span>结束时间</span>
-                      <Button
-                        className="highlight-time-sync"
-                        icon={<AimOutlined />}
-                        size="small"
-                        type="text"
-                        onClick={() => syncDraftTime('end_time')}
-                      />
-                    </span>
-                    <Input value={draft.end_time} onChange={(event) => setDraft({ ...draft, end_time: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>高光类型</span>
-                    <Select
-                      value={draft.highlight_type}
-                      options={Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }))}
-                      onChange={(value) => setDraft({ ...draft, highlight_type: value })}
-                    />
-                  </label>
-                  <label>
-                    <span>置信度</span>
-                    <InputNumber min={0} max={100} value={draft.confidence} addonAfter="%" disabled />
-                  </label>
-                  <label className="highlight-edit-reason">
-                    <span>识别依据</span>
-                    <Input.TextArea
-                      maxLength={200}
-                      rows={4}
-                      showCount
-                      value={draft.reason}
-                      onChange={(event) => setDraft({ ...draft, reason: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>审核状态</span>
-                    <Select
-                      value={draft.status}
-                      options={editableHighlightStatuses.map((value) => ({ value, label: highlightStatusMeta[value].label }))}
-                      onChange={(value) => setDraft({ ...draft, status: value })}
-                    />
-                  </label>
-                </div>
-              </>
-            ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无高光可编辑" />
-            )}
-          </div>
+            <HighlightTimelineEditor
+              currentTime={currentTime}
+              duration={resolvedDuration}
+              highlights={displayHighlights}
+              selectedId={selectedId}
+              onCreate={createOneSecondHighlight}
+              onDelete={deleteSelectedHighlight}
+              onMerge={mergeAdjacentHighlight}
+              onRedo={redoTimeline}
+              onSeek={(time) => {
+                setCurrentTime(time);
+                if (videoRef.current) {
+                  videoRef.current.currentTime = time;
+                }
+              }}
+              onSelect={selectHighlight}
+              onSplit={splitSelectedHighlight}
+              onUndo={undoTimeline}
+              onUpdate={writeDraftForHighlight}
+              redoDisabled={!redoStack.length}
+              undoDisabled={!historyStack.length}
+            />
           </section>
 
-        <section className="upload-drama-card highlight-review-right">
-          <div className="highlight-list-title">
-            <h3>高光列表（共 {filteredHighlights.length} 条）</h3>
-            <div>
-              <Select
-                value={typeFilter}
-                onChange={setTypeFilter}
-                options={[{ value: 'all', label: '全部类型' }, ...Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }))]}
-              />
-              <Select
-                value={statusFilter}
-                onChange={setStatusFilter}
-                options={[{ value: 'all', label: '全部状态' }, ...editableHighlightStatuses.map((value) => ({ value, label: highlightStatusMeta[value].label }))]}
-              />
-              <Input
-                className="highlight-review-search"
-                allowClear
-                suffix={<SearchOutlined />}
-                placeholder="搜索识别依据关键词"
-                value={keyword}
-                onChange={(event) => setKeyword(event.target.value)}
-              />
-            </div>
-          </div>
-          <Table
-            className="highlight-review-table"
-            rowKey="id"
-            loading={loading}
-            dataSource={filteredHighlights}
-            pagination={false}
-            onRow={(record) => ({ onClick: () => selectHighlight(record) })}
-            rowClassName={(record) => (record.id === selectedId ? 'active' : '')}
-            columns={[
-              { title: '时间范围', width: 130, render: (_, record) => formatRange(record) },
-              { title: '类型', width: 92, render: (_, record) => <Tag color={highlightTypeMeta[record.highlight_type]?.color}>{highlightTypeMeta[record.highlight_type]?.label ?? record.highlight_type}</Tag> },
-              { title: '识别依据', dataIndex: 'reason', ellipsis: true },
-              { title: '置信度', width: 88, render: (_, record) => `${Math.round(Number(record.confidence ?? 0) * 100)}%` },
-              { title: '状态', width: 96, render: (_, record) => <Tag color={highlightStatusMeta[record.status]?.color}>{highlightStatusMeta[record.status]?.label ?? record.status}</Tag> },
-              {
-                title: '操作',
-                width: 150,
-                render: (_, record) => (
-                  <div className="highlight-row-actions" onClick={(event) => event.stopPropagation()}>
-                    {record.status === 'draft' ? (
-                      <>
-                        <Button size="small" onClick={() => updateHighlightRecord(record, { status: 'published' })}>通过</Button>
-                        <Button size="small" onClick={() => selectHighlight(record)}>修改</Button>
-                        <Button size="small" danger onClick={() => updateHighlightRecord(record, { status: 'rejected' })}>拒绝</Button>
-                      </>
-                    ) : <span>-</span>}
+          <aside className="highlight-review-side">
+            <div className="upload-drama-card highlight-edit-panel">
+              <div className="highlight-edit-heading">
+                <h3>区间编辑</h3>
+                <div className="highlight-edit-heading-actions">
+                  <Button
+                    aria-label="新增高光"
+                    className="highlight-manual-action"
+                    icon={<PlusOutlined />}
+                    size="small"
+                    title="新增高光"
+                    type="primary"
+                    onClick={createOneSecondHighlight}
+                    loading={saving}
+                  />
+                  <Button
+                    className="highlight-save-action"
+                    icon={<SaveOutlined />}
+                    size="small"
+                    onClick={saveCurrentChange}
+                    loading={saving}
+                    disabled={!draft}
+                  >
+                    保存
+                  </Button>
+                </div>
+              </div>
+              {draft ? (
+                <>
+                  <div className={`highlight-edit-current edit ${draft.highlight_type}`}>
+                    <span>正在编辑：{selectedMeta?.label ?? '高光'}</span>
+                    <strong>{`${draft.start_time} - ${draft.end_time}`}</strong>
+                    <Tag color={highlightStatusMeta[draft.status]?.color}>{highlightStatusMeta[draft.status]?.label ?? draft.status}</Tag>
                   </div>
-                ),
-              },
-            ]}
-          />
-        </section>
-      </div>
+                  <div className="highlight-edit-grid">
+                    <label>
+                      <span className="highlight-field-title">
+                        <span>开始时间</span>
+                        <Button
+                          className="highlight-time-sync"
+                          icon={<AimOutlined />}
+                          size="small"
+                          type="text"
+                          onClick={() => syncDraftTime('start_time')}
+                        />
+                      </span>
+                      <Input value={draft.start_time} onChange={(event) => updateDraft({ start_time: event.target.value })} />
+                    </label>
+                    <label>
+                      <span className="highlight-field-title">
+                        <span>结束时间</span>
+                        <Button
+                          className="highlight-time-sync"
+                          icon={<AimOutlined />}
+                          size="small"
+                          type="text"
+                          onClick={() => syncDraftTime('end_time')}
+                        />
+                      </span>
+                      <Input value={draft.end_time} onChange={(event) => updateDraft({ end_time: event.target.value })} />
+                    </label>
+                    <label>
+                      <span>高光类型</span>
+                      <Select
+                        value={draft.highlight_type}
+                        options={Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }))}
+                        onChange={(value) => updateDraft({ highlight_type: value })}
+                      />
+                    </label>
+                    <label>
+                      <span>置信度</span>
+                      <InputNumber min={0} max={100} value={draft.confidence} addonAfter="%" onChange={(value) => updateDraft({ confidence: value ?? 0 })} />
+                    </label>
+                    <label className="highlight-edit-reason">
+                      <span>识别依据</span>
+                      <Input.TextArea
+                        maxLength={200}
+                        rows={2}
+                        showCount
+                        value={draft.reason}
+                        onChange={(event) => updateDraft({ reason: event.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>审核状态</span>
+                      <Select
+                        value={draft.status}
+                        options={editableHighlightStatuses.map((value) => ({ value, label: highlightStatusMeta[value].label }))}
+                        onChange={(value) => updateDraft({ status: value })}
+                      />
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择高光区间，或点击右上角 + 新增" />
+              )}
+            </div>
+            <section className="upload-drama-card highlight-review-right">
+              <div className="highlight-list-title">
+                <div className="highlight-list-heading">
+                  <h3>区间列表（共 {filteredHighlights.length} 条）</h3>
+                  <div className="highlight-list-actions">
+                    <Button
+                      aria-label="通过选中高光"
+                      className="highlight-row-icon pass"
+                      disabled={!selectedHighlightKeys.length}
+                      icon={<CheckOutlined />}
+                      size="small"
+                      title="通过选中高光"
+                      onClick={() => updateSelectedHighlightsStatus('published')}
+                    />
+                    <Button
+                      aria-label="拒绝选中高光"
+                      className="highlight-row-icon reject"
+                      disabled={!selectedHighlightKeys.length}
+                      icon={<CloseCircleOutlined />}
+                      size="small"
+                      title="拒绝选中高光"
+                      onClick={() => updateSelectedHighlightsStatus('rejected')}
+                    />
+                  </div>
+                </div>
+                <div className="highlight-list-filters">
+                  <Select
+                    value={typeFilter}
+                    onChange={setTypeFilter}
+                    options={[{ value: 'all', label: '全部类型' }, ...Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }))]}
+                  />
+                  <Select
+                    value={statusFilter}
+                    onChange={setStatusFilter}
+                    options={[{ value: 'all', label: '全部状态' }, ...editableHighlightStatuses.map((value) => ({ value, label: highlightStatusMeta[value].label }))]}
+                  />
+                  <Input
+                    className="highlight-review-search"
+                    allowClear
+                    suffix={<SearchOutlined />}
+                    placeholder="搜索识别依据关键词"
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                  />
+                </div>
+              </div>
+              <Table
+                className="highlight-review-table"
+                rowKey="id"
+                loading={loading}
+                dataSource={filteredHighlights}
+                pagination={false}
+                tableLayout="fixed"
+                rowSelection={{
+                  selectedRowKeys: selectedHighlightKeys,
+                  onChange: setSelectedHighlightKeys,
+                  columnWidth: 38,
+                }}
+                scroll={{ y: '100%' }}
+                onRow={(record) => ({ onClick: () => selectHighlight(record) })}
+                rowClassName={(record) => (record.id === selectedId ? 'active' : '')}
+                columns={[
+                  { title: '时间', width: 104, render: (_, record) => formatRange(record).replace(' - ', '-') },
+                  { title: '类型', width: 70, render: (_, record) => <Tag color={highlightTypeMeta[record.highlight_type]?.color}>{highlightTypeMeta[record.highlight_type]?.label ?? record.highlight_type}</Tag> },
+                  { title: '置信度', width: 70, render: (_, record) => `${Math.round(Number(record.confidence ?? 0) * 100)}%` },
+                  { title: '状态', width: 78, render: (_, record) => <Tag color={highlightStatusMeta[record.status]?.color}>{highlightStatusMeta[record.status]?.label ?? record.status}</Tag> },
+                ]}
+              />
+            </section>
+          </aside>
+        </div>
 
-      <div className="upload-drama-footer highlight-review-footer">
-        <div className="highlight-review-stats">
-          <span>全部 <b>{stats.all}</b></span>
-          <span className="success">已通过 <b>{stats.published}</b></span>
-          <span className="error">已拒绝 <b>{stats.rejected}</b></span>
-          <span className="warning">待审核 <b>{stats.draft}</b></span>
+        <div className="upload-drama-footer highlight-review-footer">
+          <div className="highlight-review-stats">
+            <span>全部 <b>{stats.all}</b></span>
+            <span className="success">已通过 <b>{stats.published}</b></span>
+            <span className="error">已拒绝 <b>{stats.rejected}</b></span>
+            <span className="warning">待审核 <b>{stats.draft}</b></span>
+          </div>
+          <div>
+            <Button onClick={requestClose}>取消</Button>
+            <Button loading={saving} disabled={!hasUnsavedChanges} onClick={saveAllChanges}>保存所有修改</Button>
+            <Button type="primary" loading={saving} onClick={submitReview}>提交审核结果</Button>
+          </div>
         </div>
-        <div>
-          <Button onClick={onClose}>取消</Button>
-          <Button loading={saving} disabled={!canCreateHighlight} onClick={saveEditor}>{editorMode === 'create' ? '创建高光' : '保存修改'}</Button>
-          <Button type="primary" loading={saving} onClick={submitReview}>提交审核结果</Button>
-        </div>
-      </div>
       </div>
     </Modal>
   );
@@ -1297,6 +1605,19 @@ function highlightToDraft(highlight) {
     confidence: Math.round(Number(highlight.confidence ?? 0) * 100),
     reason: highlight.reason ?? '',
     status: highlight.status,
+    emotion: highlight.emotion ?? '',
+  };
+}
+
+function draftToHighlightFields(draft) {
+  return {
+    start_time: parseTimecode(draft.start_time),
+    end_time: parseTimecode(draft.end_time),
+    highlight_type: draft.highlight_type,
+    confidence: Number(draft.confidence ?? 0) / 100,
+    reason: draft.reason,
+    status: draft.status,
+    emotion: draft.emotion,
   };
 }
 
