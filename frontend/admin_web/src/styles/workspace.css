@@ -2426,7 +2426,7 @@
 }
 
 .analysis-table-panel .analysis-action-column {
-  width: 260px;
+  width: 360px;
   text-align: right;
 }
 
@@ -2465,6 +2465,14 @@
 
 .analysis-detail-action.ant-btn {
   width: 88px;
+  padding-inline: 8px;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.analysis-subtitle-action.ant-btn {
+  width: 96px;
   padding-inline: 8px;
   color: #667085;
   font-size: 13px;
@@ -2514,6 +2522,138 @@
   color: #111827;
   font-size: 15px;
   font-weight: 700;
+}
+
+.subtitle-asr-form {
+  display: grid;
+  gap: 12px;
+  max-height: min(680px, calc(100vh - 220px));
+  overflow-y: auto;
+}
+
+.subtitle-asr-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  background: #f8faff;
+  border: 1px solid #e5ecff;
+}
+
+.subtitle-asr-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.subtitle-asr-title strong {
+  overflow: hidden;
+  color: #101828;
+  font-size: 18px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle-asr-title span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.subtitle-asr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.subtitle-asr-meta span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.subtitle-asr-result,
+.subtitle-asr-log-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.subtitle-asr-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.subtitle-asr-section-title h3 {
+  margin: 0;
+  color: #101828;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.subtitle-asr-section-title span {
+  min-width: 0;
+  overflow: hidden;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle-asr-result .ant-input {
+  height: 300px !important;
+  resize: none;
+  color: #344054;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.subtitle-asr-logs {
+  display: grid;
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid #eef0f4;
+  border-radius: 6px;
+}
+
+.subtitle-asr-log-row {
+  display: grid;
+  grid-template-columns: 78px 142px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef0f4;
+}
+
+.subtitle-asr-log-row:last-child {
+  border-bottom: 0;
+}
+
+.subtitle-asr-log-row span,
+.subtitle-asr-log-row p {
+  margin: 0;
+  color: #667085;
+  font-size: 12px;
+}
+
+.subtitle-asr-log-row p {
+  min-width: 0;
+  overflow: hidden;
+  color: #344054;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .analysis-asset-toolbar {

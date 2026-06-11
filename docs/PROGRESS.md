@@ -30,12 +30,16 @@
 - 高光多轨道编辑器修正首尾刻度文本溢出；区间编辑区固定为紧凑高度，右下区间列表获得稳定滚动区域，避免选中高光后面板高度抖动并挤压列表。
 - 高光审核右侧面板继续修复滚动细节：区间编辑卡片支持内部纵向滚动，区间列表表格 body 取消固定高度并填满容器剩余空间。
 - 高光审核区间编辑恢复单条保存按钮；区间列表改为与 AI 分析主表格一致的多选表格形态，批量通过/拒绝操作移到列表标题行右侧，行内操作列已移除，筛选控件高度统一。
+- AI 分析剧集行在“高光审核”右侧新增“字幕识别”入口；新增字幕识别结果弹窗，接入 `subtitle_asr` 异步任务，可提交识别、覆盖已有字幕、查看任务状态/日志，并展示写回后的 SRT 字幕内容；弹窗结构已调整为内容管理编辑信息同款 header/body/footer 样式。
 - 已联网检索 React 多轨时间线编辑器方向，当前未引入第三方依赖：现有公开包未确认能稳定覆盖本项目 React 19 + Ant Design + 高光审核草稿保存链路，先保留可控的本地组件实现。
 - 高光审核弹窗的右上角关闭、遮罩关闭和底部取消统一接入未保存修改提醒，存在已编辑未保存高光时会先确认是否放弃修改。
 - 修复上传/审核 Modal 的按钮基础样式根因：移除 `.upload-drama-modal` 通用控件选择器里对 `.ant-btn` 的白底强制覆盖，避免 primary 按钮未悬停时被刷成白色。
 - 系统设置页新增 AI 识别 Prompt 编辑器；后端新增 `GET/PUT /api/settings/prompt-template`，直接读写 `ai_service/prompt_template.md`，保存后影响后续 LLM 分析任务。
 - 系统设置页新增 LLM 运行配置：支持保存启用状态、API Key、Base URL、模型和超时时间；后端 AI 分析任务优先读取 `system_setting.llm`，再回退到环境变量，API Key 不会通过读取接口明文回显。
 - LLM 请求体新增可配置 JSON 响应模式开关 `use_response_format`，默认关闭；系统设置页在 AI 识别 Prompt 上方提供开关，关闭时不再发送 `response_format={"type":"json_object"}`，兼容豆包 Seed 等不支持该参数的模型。
+- 修复发布任务失败状态处理：发布中心现在会读取发布单返回的 `status`、`failed_count`、`error` 和失败条目错误并直接提示业务失败原因；后端发布执行改为先校验高光时间段重叠，再把 `draft` 高光改为 `published`，避免失败发布单污染高光状态。
+- 修复本地字幕识别模型缓存权限问题：Docker app/worker 显式设置 `HOME=/app`、`XDG_CACHE_HOME`、`HF_HOME` 和 `WHISPER_DOWNLOAD_ROOT` 到可写的 `backend/model_cache`，并让 `WhisperModel` 使用配置化下载目录，避免 faster-whisper 在 `HOME=/nonexistent` 环境下报权限错误。
+- 将本地字幕识别默认模型从 `small` 调整为最小的 `tiny`，优先降低首次模型下载体积和 CPU 识别耗时；需要更高准确率时仍可通过 `WHISPER_MODEL` 环境变量改回 `small` 或更大模型。
 
 ### 已验证
 - `python -m pytest tests/test_subtitle_asr.py tests/test_jobs.py --basetemp .codex-pytest-tmp` 覆盖字幕识别服务写回 SRT、已有字幕跳过和 `subtitle_asr` 任务创建。
@@ -45,6 +49,10 @@
 - `npm exec eslint .` 在 `frontend/admin_web` 下通过。
 - `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
 - `git diff --check` 通过。
+- `LOG_DIR=backend/logs .venv312/bin/python -m pytest tests/test_publish.py --basetemp .codex-pytest-tmp-publish` 通过，覆盖发布成功、失败、待发布列表与定时发布；新增用例确认重叠高光导致发布失败时草稿仍保持未发布。
+- `LOG_DIR=backend/logs .venv312/bin/python -m pytest tests/test_subtitle_asr.py tests/test_jobs.py --basetemp .codex-pytest-tmp-asr` 通过，覆盖字幕识别任务创建、已有字幕跳过、SRT 写回和 Whisper 模型下载目录传参。
+- `docker compose config` 通过，确认 app 与 worker 均注入可写模型缓存环境变量并挂载 `backend/model_cache`。
+- `PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache .venv312/bin/python -m compileall backend/app` 通过。
 
 ## 2026-06-11 内容管理批量上传功能
 

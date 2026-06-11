@@ -132,10 +132,16 @@ def transcribe_audio(audio_path: Path) -> list[TranscriptSegment]:
     except ImportError as exc:
         raise RuntimeError("faster-whisper is not installed") from exc
 
+    model_kwargs = {
+        "device": settings.whisper_device,
+        "compute_type": settings.whisper_compute_type,
+    }
+    if settings.whisper_download_root:
+        model_kwargs["download_root"] = settings.whisper_download_root
+
     model = WhisperModel(
         settings.whisper_model,
-        device=settings.whisper_device,
-        compute_type=settings.whisper_compute_type,
+        **model_kwargs,
     )
     kwargs = {"vad_filter": True}
     if settings.whisper_language:

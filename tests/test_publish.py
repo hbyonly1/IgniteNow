@@ -76,6 +76,49 @@ def test_publish_job_publishes_draft_highlights_to_player(
     assert rejected.button_text == "替她反击"
 
 
+def test_failed_publish_keeps_overlapping_drafts_unpublished(
+    client: TestClient,
+    db_session: Session,
+    demo_episode: Episode,
+    admin_headers: dict[str, str],
+) -> None:
+    overlapping_draft = HighlightEvent(
+        episode_id=demo_episode.id,
+        start_time=4,
+        end_time=6,
+        highlight_type="conflict",
+        emotion="angry",
+        intensity=0.7,
+        confidence=0.8,
+        trigger_score=0.6,
+        reason="overlaps published",
+        button_text="冲突升级",
+        effect="anger_bar",
+        status="draft",
+    )
+    db_session.add(overlapping_draft)
+    db_session.commit()
+
+    response = client.post(
+        "/api/publish/jobs",
+        headers=admin_headers,
+        json={"episode_ids": [demo_episode.id], "channel": "android"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert data["failed_count"] == 1
+    assert "overlaps" in data["error"]
+
+    db_session.refresh(overlapping_draft)
+    assert overlapping_draft.status == "draft"
+
+    player_highlights = client.get(f"/api/player/episodes/{demo_episode.id}").json()["data"]["highlights"]
+    assert len(player_highlights) == 1
+    assert player_highlights[0]["button_text"] == "反转了"
+
+
 def test_publish_pending_items_and_recent_jobs(
     client: TestClient,
     demo_episode: Episode,

@@ -17,7 +17,12 @@ FROM python:3.12-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    HOME=/app \
+    XDG_CACHE_HOME=/app/backend/model_cache \
+    HF_HOME=/app/backend/model_cache/huggingface \
+    WHISPER_MODEL=tiny \
+    WHISPER_DOWNLOAD_ROOT=/app/backend/model_cache/faster-whisper
 
 WORKDIR /app
 
@@ -33,7 +38,7 @@ COPY ai_service ./ai_service
 COPY datebase ./datebase
 COPY --from=admin-web-builder /app/frontend/admin_web/dist ./frontend/admin_web/dist
 
-RUN mkdir -p backend/uploads/videos backend/uploads/subtitles backend/logs \
+RUN mkdir -p backend/uploads/videos backend/uploads/subtitles backend/logs backend/model_cache \
     && chown -R ignitenow:ignitenow /app
 
 USER ignitenow

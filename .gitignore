@@ -78,3 +78,4 @@ local.properties
 artifacts/delivery/.demo-pids.json
 
 uploads/
+backend/model_cache/

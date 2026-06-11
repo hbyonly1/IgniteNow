@@ -143,15 +143,16 @@ def _execute_publish_job(db: Session, job: PublishJob) -> None:
             item.error = "episode has no draft or published highlights"
             continue
 
-        for highlight in highlights:
-            if highlight.status == "draft":
-                highlight.status = "published"
         try:
             assert_no_published_overlap(db, episode.id, highlights)
         except ValueError as exc:
             item.status = "failed"
             item.error = str(exc)
             continue
+
+        for highlight in highlights:
+            if highlight.status == "draft":
+                highlight.status = "published"
 
         item.status = "success"
         item.error = ""

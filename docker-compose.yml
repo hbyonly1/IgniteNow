@@ -7,10 +7,16 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-ignitenow}
+      HOME: /app
+      XDG_CACHE_HOME: /app/backend/model_cache
+      HF_HOME: /app/backend/model_cache/huggingface
+      WHISPER_MODEL: ${WHISPER_MODEL:-tiny}
+      WHISPER_DOWNLOAD_ROOT: /app/backend/model_cache/faster-whisper
     volumes:
       - ./backend/app:/app/backend/app
       - ./backend/uploads:/app/backend/uploads
       - ./backend/logs:/app/backend/logs
+      - ./backend/model_cache:/app/backend/model_cache
     depends_on:
       redis:
         condition: service_started
@@ -31,10 +37,16 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-ignitenow}
+      HOME: /app
+      XDG_CACHE_HOME: /app/backend/model_cache
+      HF_HOME: /app/backend/model_cache/huggingface
+      WHISPER_MODEL: ${WHISPER_MODEL:-tiny}
+      WHISPER_DOWNLOAD_ROOT: /app/backend/model_cache/faster-whisper
     volumes:
       - ./backend/app:/app/backend/app
       - ./backend/uploads:/app/backend/uploads
       - ./backend/logs:/app/backend/logs
+      - ./backend/model_cache:/app/backend/model_cache
     depends_on:
       redis:
         condition: service_started

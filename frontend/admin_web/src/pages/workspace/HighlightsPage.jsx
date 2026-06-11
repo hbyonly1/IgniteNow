@@ -44,6 +44,16 @@ function formatPercent(value) {
   return `${Math.round(Number(value ?? 0) * 100)}%`;
 }
 
+function isFailedPublishJob(job) {
+  return job?.status === 'failed' || Number(job?.failed_count ?? 0) > 0;
+}
+
+function publishFailureMessage(job, fallback) {
+  const itemError = job?.items?.find((item) => item.status === 'failed' && item.error)?.error;
+  const detail = job?.error || itemError;
+  return detail ? `${fallback}：${detail}` : fallback;
+}
+
 async function fetchPublishCenter(statusFilter) {
   const [itemsResponse, jobsResponse] = await Promise.all([
     apiClient.get('/api/publish/pending-items', { params: { status: statusFilter } }),
@@ -141,13 +151,18 @@ export default function HighlightsPage() {
       return;
     }
     try {
-      await apiClient.post('/api/publish/jobs', {
+      const response = await apiClient.post('/api/publish/jobs', {
         episode_ids: episodeIds,
         channel: 'android',
         scheduled_at: scheduledAt,
       });
-      message.success('发布任务已提交');
-      setConfigOpen(false);
+      const publishJob = response.data.data;
+      if (isFailedPublishJob(publishJob)) {
+        message.error(publishFailureMessage(publishJob, '发布任务执行失败'));
+      } else {
+        message.success(publishJob?.status === 'pending' ? '发布任务已提交' : '发布成功');
+        setConfigOpen(false);
+      }
       setSelectedRowKeys([]);
       loadPublishCenter();
     } catch (error) {
@@ -364,8 +379,15 @@ export default function HighlightsPage() {
               loading={loading}
               onClick={async () => {
                 try {
-                  await apiClient.post('/api/publish/jobs/one-click');
-                  message.success('已提交一键发布任务');
+                  const response = await apiClient.post('/api/publish/jobs/one-click');
+                  const publishJob = response.data.data;
+                  if (publishJob?.created === false) {
+                    message.info('暂无待发布内容');
+                  } else if (isFailedPublishJob(publishJob)) {
+                    message.error(publishFailureMessage(publishJob, '一键发布执行失败'));
+                  } else {
+                    message.success(publishJob?.status === 'pending' ? '已提交一键发布任务' : '一键发布完成');
+                  }
                   loadPublishCenter();
                 } catch (error) {
                   message.error(apiErrorMessage(error, '一键发布失败'));

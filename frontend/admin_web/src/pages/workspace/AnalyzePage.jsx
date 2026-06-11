@@ -181,6 +181,7 @@ function AnalyzeQueue() {
   const [onlyReadyAssets, setOnlyReadyAssets] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [reviewEpisode, setReviewEpisode] = useState(null);
+  const [subtitleEpisode, setSubtitleEpisode] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -531,7 +532,7 @@ function AnalyzeQueue() {
     {
       title: '操作',
       key: 'actions',
-      width: 260,
+      width: 360,
       align: 'right',
       className: 'analysis-action-column',
       render: (_, record) => {
@@ -564,6 +565,14 @@ function AnalyzeQueue() {
                 onClick={() => setReviewEpisode(record)}
               >
                 高光审核
+              </Button>
+              <Button
+                size="small"
+                className="analysis-subtitle-action"
+                icon={<FileSearchOutlined />}
+                onClick={() => setSubtitleEpisode(record)}
+              >
+                字幕识别
               </Button>
             </div>
           );
@@ -786,6 +795,15 @@ function AnalyzeQueue() {
         onClose={() => setReviewEpisode(null)}
         onUpdated={loadData}
       />
+      <SubtitleAsrModal
+        episode={subtitleEpisode}
+        open={Boolean(subtitleEpisode)}
+        onClose={() => {
+          setSubtitleEpisode(null);
+          Promise.resolve().then(loadData);
+        }}
+        onUpdated={loadData}
+      />
     </section>
   );
 }
@@ -799,6 +817,194 @@ function MetricCard({ icon, tone, label, value }) {
         <strong>{value}</strong>
       </div>
     </article>
+  );
+}
+
+const jobStatusMeta = {
+  pending: { label: '排队中', color: 'default' },
+  running: { label: '识别中', color: 'processing' },
+  success: { label: '已完成', color: 'success' },
+  failed: { label: '失败', color: 'error' },
+  canceled: { label: '已取消', color: 'default' },
+};
+
+function SubtitleAsrModal({ episode, open, onClose, onUpdated }) {
+  const [currentEpisode, setCurrentEpisode] = useState(null);
+  const [job, setJob] = useState(null);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const loadDetail = useCallback(async () => {
+    if (!episode?.id) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const [queueResponse, jobsResponse] = await Promise.all([
+        apiClient.get('/api/analysis/queue', { params: { limit: 500 } }),
+        apiClient.get('/api/system/jobs', { params: { type: 'subtitle_asr', limit: 200 } }),
+      ]);
+      const nextEpisode = (queueResponse.data.data ?? []).find((item) => item.id === episode.id) ?? episode;
+      const nextJob = (jobsResponse.data.data ?? []).find((item) => parsePayload(item.payload_json).episode_id === episode.id) ?? null;
+      const nextLogs = nextJob
+        ? (await apiClient.get(`/api/system/jobs/${nextJob.id}/logs`)).data.data ?? []
+        : [];
+      setCurrentEpisode(nextEpisode);
+      setJob(nextJob);
+      setLogs(nextLogs);
+    } catch (error) {
+      message.error(apiErrorMessage(error, '字幕识别结果加载失败'));
+    } finally {
+      setLoading(false);
+    }
+  }, [episode]);
+
+  useEffect(() => {
+    if (open) {
+      Promise.resolve().then(loadDetail);
+    }
+  }, [loadDetail, open]);
+
+  useEffect(() => {
+    if (!open || !['pending', 'running'].includes(job?.status)) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      Promise.resolve().then(loadDetail);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [job?.status, loadDetail, open]);
+
+  const submitSubtitleAsr = async (force = false) => {
+    if (!episode?.id) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await apiClient.post('/api/system/jobs', {
+        type: 'subtitle_asr',
+        payload: { episode_id: episode.id, force },
+      });
+      setJob(response.data.data);
+      setLogs([]);
+      message.success('字幕识别任务已提交');
+      await loadDetail();
+      await onUpdated?.();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '字幕识别任务提交失败'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const requestSubtitleAsr = () => {
+    const sourceEpisode = currentEpisode ?? episode;
+    if (!sourceEpisode?.video_url) {
+      message.warning('当前剧集没有可识别的视频文件');
+      return;
+    }
+    if (hasSubtitle(sourceEpisode)) {
+      Modal.confirm({
+        title: '覆盖已有字幕？',
+        content: '当前剧集已经有字幕内容，重新识别会覆盖现有字幕。',
+        okText: '覆盖并识别',
+        cancelText: '取消',
+        okButtonProps: { danger: true },
+        onOk: () => submitSubtitleAsr(true),
+      });
+      return;
+    }
+    submitSubtitleAsr(false);
+  };
+
+  const sourceEpisode = currentEpisode ?? episode;
+  const statusMeta = jobStatusMeta[job?.status] ?? jobStatusMeta.pending;
+  const subtitleContent = sourceEpisode?.subtitle_content?.trim() ?? '';
+  const cueCount = subtitleContent ? (subtitleContent.match(/-->/g) ?? []).length : 0;
+  const canStart = Boolean(sourceEpisode?.video_url);
+
+  return (
+    <Modal
+      className="upload-drama-modal subtitle-asr-modal"
+      title={null}
+      open={open}
+      onCancel={onClose}
+      width={920}
+      destroyOnHidden
+      footer={null}
+    >
+      <div className="upload-drama-header">
+        <div>
+          <h2>字幕识别</h2>
+          <p>查看本地语音识别结果并重新提交字幕识别任务</p>
+        </div>
+        <Button type="text" className="upload-drama-close" icon={<CloseOutlined />} onClick={onClose} />
+      </div>
+
+      <div className="upload-drama-form subtitle-asr-form">
+        <section className="upload-drama-card subtitle-asr-summary">
+          <div className="subtitle-asr-title">
+            <strong>{sourceEpisode?.drama_title ?? '-'}</strong>
+            <span>第 {sourceEpisode?.episode_no ?? '-'} 集</span>
+          </div>
+          <div className="subtitle-asr-meta">
+            <Tag color={hasSubtitle(sourceEpisode ?? {}) ? 'success' : 'warning'}>
+              {hasSubtitle(sourceEpisode ?? {}) ? '字幕已写回' : '暂无字幕'}
+            </Tag>
+            <Tag color={statusMeta.color}>{job ? statusMeta.label : '未提交'}</Tag>
+            <span>字幕段落 {cueCount}</span>
+            <span>更新时间 {sourceEpisode?.updated_at ? new Date(sourceEpisode.updated_at).toLocaleString() : '-'}</span>
+          </div>
+        </section>
+
+        {job?.error ? (
+          <Alert type="error" showIcon message="字幕识别失败" description={job.error} />
+        ) : null}
+
+        <section className="upload-drama-card subtitle-asr-result">
+          <div className="subtitle-asr-section-title">
+            <h3>识别字幕</h3>
+            <span>{sourceEpisode?.subtitle_original_name || sourceEpisode?.subtitle_url || '-'}</span>
+          </div>
+          <Input.TextArea value={subtitleContent || '暂无识别结果'} readOnly autoSize={false} />
+        </section>
+
+        <section className="upload-drama-card subtitle-asr-log-card">
+          <div className="subtitle-asr-section-title">
+            <h3>执行日志</h3>
+            <span>{job?.id ? `任务 #${job.id}` : '暂无任务'}</span>
+          </div>
+          <div className="subtitle-asr-logs">
+            {logs.length ? logs.map((log) => (
+              <div key={log.id} className="subtitle-asr-log-row">
+                <Tag color={log.level === 'error' ? 'error' : log.level === 'warning' ? 'warning' : 'processing'}>
+                  {log.level}
+                </Tag>
+                <span>{log.created_at ? new Date(log.created_at).toLocaleString() : '-'}</span>
+                <p>{log.message}</p>
+              </div>
+            )) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无执行日志" />
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="upload-drama-footer">
+        <Button onClick={onClose}>关闭</Button>
+        <Button icon={<ReloadOutlined />} onClick={loadDetail} loading={loading}>重新加载</Button>
+        <Button
+          type="primary"
+          icon={<FileSearchOutlined />}
+          onClick={requestSubtitleAsr}
+          loading={submitting}
+          disabled={!canStart}
+        >
+          开始识别
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

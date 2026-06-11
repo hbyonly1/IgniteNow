@@ -1,7 +1,11 @@
+import sys
+from types import SimpleNamespace
+
 from sqlalchemy.orm import Session
 
 from backend.app.models import Drama, Episode
 from backend.app.services import subtitle_asr_service
+from backend.app.config import settings
 from backend.app.services.subtitle_asr_service import TranscriptSegment
 
 
@@ -75,3 +79,37 @@ def test_transcribe_episode_subtitles_skips_existing_without_force(db_session: S
         "subtitle_url": "existing.srt",
         "skipped": True,
     }
+
+
+def test_transcribe_audio_uses_configured_download_root(tmp_path, monkeypatch) -> None:
+    captured = {}
+
+    class FakeWhisperModel:
+        def __init__(self, model_name, **kwargs):
+            captured["model_name"] = model_name
+            captured["kwargs"] = kwargs
+
+        def transcribe(self, audio_path, **kwargs):
+            captured["audio_path"] = audio_path
+            captured["transcribe_kwargs"] = kwargs
+            return [SimpleNamespace(start=0.0, end=1.0, text="测试字幕")], None
+
+    monkeypatch.setattr(settings, "whisper_model", "tiny")
+    monkeypatch.setattr(settings, "whisper_device", "cpu")
+    monkeypatch.setattr(settings, "whisper_compute_type", "int8")
+    monkeypatch.setattr(settings, "whisper_language", "zh")
+    monkeypatch.setattr(settings, "whisper_download_root", str(tmp_path / "model_cache"))
+    monkeypatch.setitem(
+        sys.modules,
+        "faster_whisper",
+        SimpleNamespace(WhisperModel=FakeWhisperModel),
+    )
+
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"fake")
+    segments = subtitle_asr_service.transcribe_audio(audio_path)
+
+    assert segments == [TranscriptSegment(start=0.0, end=1.0, text="测试字幕")]
+    assert captured["model_name"] == "tiny"
+    assert captured["kwargs"]["download_root"] == str(tmp_path / "model_cache")
+    assert captured["transcribe_kwargs"]["language"] == "zh"
