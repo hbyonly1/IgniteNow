@@ -3,23 +3,18 @@ import 'package:flutter_3d_controller/flutter_3d_controller.dart';
 
 enum _MikeState { scanning, pickedUp, idle }
 
-/// Mike the cat — perches on the top edge of the video frame.
+/// Mike the cat — perches on the top edge of the video and can be dragged.
 ///
-/// SINGLE-VIEWER design: there is only ONE Flutter3DViewer (one Android
-/// platform view). The GLB `src` is swapped when needed:
-///   scanning          -> mike_cat.glb       plays _scanClip
-///   pickedUp / idle    -> Mike_picked_up.glb plays "cat_picked_up" / "cat_idle"
+/// DUAL-VIEWER, ALWAYS-ALIVE design (two GLB files, two platform views):
+///   * scan viewer -> mike_cat.glb        (CAT_PEEK)                  — perched
+///   * pick viewer -> Mike_picked_up.glb  (cat_picked_up / cat_idle)  — dragged
 ///
-/// Because pickedUp and idle share the same file, dropping Mike is just a
-/// playAnimation call (no reload). Only grabbing (mike_cat -> Mike_picked_up)
-/// and snapping back above the player (-> mike_cat) reload the model. A
-/// ValueKey on the viewer forces a clean reload (and a fresh onLoad) whenever
-/// `src` changes.
-///
-/// Tradeoff vs. the two-viewer approach: a single viewer cannot pre-load the
-/// other GLB, so there may be a brief blank while the new file loads at the
-/// moment of grabbing. In return there is only one platform view, so the
-/// Android "overlapping surfaces go blank" problem cannot occur.
+/// Both viewers are mounted for the whole lifetime and are NEVER hidden via
+/// Offstage or opacity:0 — hiding is exactly what makes an Android platform-view
+/// surface go blank (the "Mike disappears" / "viewer #2 won't render" bug).
+/// Instead the INACTIVE viewer is moved OFF-SCREEN at full size (opacity stays
+/// 1), so it keeps rendering and stays loaded. Grabbing / dropping just moves
+/// the right viewer onto the cat position and plays a clip — no reload.
 class MikeLayer extends StatefulWidget {
   const MikeLayer({super.key, required this.videoAspectRatio});
 
@@ -35,16 +30,17 @@ class _MikeLayerState extends State<MikeLayer> {
   static const String _scanGlb = 'assets/mike_cat.glb';
   static const String _pickupGlb = 'assets/Mike_picked_up.glb';
 
-  /// The "watching the screen" clip inside mike_cat.glb.
-  /// NOTE: mike_cat.glb has NO clip literally named "cat_scan". Its real clips
-  /// are: CAT_PEEK, CAT_TARGET_LOCK, T-Pose, CAT_PEEK_SK. Pick the perch/watch
-  /// one here.
+  // Clip names (case-sensitive) verified from the GLB files.
   static const String _scanClip = 'CAT_PEEK';
+  static const String _pickedUpClip = 'cat_picked_up';
+  static const String _idleClip = 'cat_idle';
 
-  final Flutter3DController _controller = Flutter3DController();
+  final Flutter3DController _scanCtl = Flutter3DController();
+  final Flutter3DController _pickCtl = Flutter3DController();
 
-  _MikeState _mikeState = _MikeState.scanning;
-  bool _mikeVisible = false;
+  _MikeState _state = _MikeState.scanning;
+  bool _scanLoaded = false;
+  bool _pickLoaded = false;
   bool _snapping = false;
 
   bool _initialized = false;
@@ -52,21 +48,21 @@ class _MikeLayerState extends State<MikeLayer> {
   Offset _perchPos = Offset.zero;
   double _videoTopY = 0;
 
-  String get _currentSrc =>
-      _mikeState == _MikeState.scanning ? _scanGlb : _pickupGlb;
+  bool get _scanActive => _state == _MikeState.scanning;
 
-  String _clipFor(_MikeState s) {
-    switch (s) {
-      case _MikeState.scanning:
-        return _scanClip;
-      case _MikeState.pickedUp:
-        return 'cat_picked_up';
-      case _MikeState.idle:
-        return 'cat_idle';
-    }
+  // Off-screen parking spot for the inactive viewer (full size, never hidden).
+  Offset get _parkPos => Offset(-_mikeSize - 60, _perchPos.dy);
+
+  void _onScanLoad(String _) {
+    _scanLoaded = true;
+    _scanCtl.playAnimation(animationName: _scanClip);
   }
 
-  // ── helpers ────────────────────────────────────────────────────────────────
+  void _onPickLoad(String _) {
+    _pickLoaded = true;
+    // Park on idle so it isn't T-posing when first brought on-screen.
+    _pickCtl.playAnimation(animationName: _idleClip);
+  }
 
   ({double ox, double oy, double dw, double dh}) _videoRect(Size s) {
     final va = widget.videoAspectRatio;
@@ -84,34 +80,14 @@ class _MikeLayerState extends State<MikeLayer> {
     return (ox: ox, oy: oy, dw: dw, dh: dh);
   }
 
-  /// Change state. If the GLB file is the same as before, just swap the clip
-  /// (no reload). If the file differs, the ValueKey on the viewer triggers a
-  /// reload and onLoad will play the right clip.
-  void _transition(_MikeState next) {
-    final fileChanged = (_mikeState == _MikeState.scanning) !=
-        (next == _MikeState.scanning);
-    setState(() => _mikeState = next);
-    if (!fileChanged) {
-      _controller.playAnimation(animationName: _clipFor(next));
-    }
-    // If the file changed, _onViewerLoad handles playing the clip.
-  }
-
-  void _onViewerLoad(String _) {
-    _controller.playAnimation(animationName: _clipFor(_mikeState));
-    if (!_mikeVisible) {
-      // Reveal after the clip has had time to start, hiding the bind/T-pose.
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (mounted) setState(() => _mikeVisible = true);
-      });
-    }
-  }
-
-  // ── gesture handlers ───────────────────────────────────────────────────────
+  // ── gestures ─────────────────────────────────────────────────────────────
 
   void _onPanStart(DragStartDetails _) {
-    setState(() => _snapping = false);
-    _transition(_MikeState.pickedUp);
+    setState(() {
+      _snapping = false;
+      _state = _MikeState.pickedUp; // pick viewer slides in from off-screen
+    });
+    if (_pickLoaded) _pickCtl.playAnimation(animationName: _pickedUpClip);
   }
 
   void _onPanUpdate(DragUpdateDetails d) {
@@ -121,88 +97,107 @@ class _MikeLayerState extends State<MikeLayer> {
   void _onPanEnd(DragEndDetails _) {
     final centerY = _pos.dy + _mikeSize / 2;
     if (centerY < _videoTopY) {
-      // Dragged above the video top edge -> snap back to perch and scan
+      // Dragged above the video top edge -> snap back to perch and scan.
       setState(() {
         _pos = _perchPos;
         _snapping = true;
+        _state = _MikeState.scanning;
       });
-      _transition(_MikeState.scanning);
+      if (_scanLoaded) _scanCtl.playAnimation(animationName: _scanClip);
       Future.delayed(const Duration(milliseconds: 350), () {
         if (mounted) setState(() => _snapping = false);
       });
     } else {
-      // Released inside the player -> stay put, play idle (same file, no reload)
-      setState(() => _snapping = false);
-      _transition(_MikeState.idle);
+      // Released inside the player -> stay put and play idle.
+      setState(() {
+        _snapping = false;
+        _state = _MikeState.idle;
+      });
+      if (_pickLoaded) _pickCtl.playAnimation(animationName: _idleClip);
     }
   }
 
-  // ── build ──────────────────────────────────────────────────────────────────
+  // ── build ────────────────────────────────────────────────────────────────
+
+  Widget _viewer({
+    required bool active,
+    required String src,
+    required Flutter3DController controller,
+    required void Function(String) onLoad,
+  }) {
+    final Offset at = active ? _pos : _parkPos;
+    final Widget body = IgnorePointer(
+      // WebView never gets raw touches -> model-viewer camera rotation disabled.
+      child: SizedBox(
+        width: _mikeSize,
+        height: _mikeSize,
+        child: Flutter3DViewer(
+          src: src,
+          controller: controller,
+          activeGestureInterceptor: false,
+          onLoad: onLoad,
+        ),
+      ),
+    );
+
+    return AnimatedPositioned(
+      duration: (active && _snapping)
+          ? const Duration(milliseconds: 300)
+          : Duration.zero,
+      curve: Curves.easeOut,
+      left: at.dx,
+      top: at.dy,
+      child: active
+          ? GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: _onPanStart,
+              onPanUpdate: _onPanUpdate,
+              onPanEnd: _onPanEnd,
+              child: body,
+            )
+          : body,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final stackSize = Size(constraints.maxWidth, constraints.maxHeight);
-        final r = _videoRect(stackSize);
+        final r = _videoRect(Size(constraints.maxWidth, constraints.maxHeight));
         _videoTopY = r.oy;
         final newPerch = Offset(
           r.ox + r.dw / 2 - _mikeSize / 2,
           r.oy - _mikeSize / 2,
         );
-
         if (!_initialized) {
           _pos = newPerch;
           _perchPos = newPerch;
           _initialized = true;
         } else {
           _perchPos = newPerch;
-          if (_mikeState == _MikeState.scanning && !_snapping) {
+          if (_state == _MikeState.scanning && !_snapping) {
             _pos = newPerch;
           }
         }
 
+        final scanViewer = _viewer(
+          active: _scanActive,
+          src: _scanGlb,
+          controller: _scanCtl,
+          onLoad: _onScanLoad,
+        );
+        final pickViewer = _viewer(
+          active: !_scanActive,
+          src: _pickupGlb,
+          controller: _pickCtl,
+          onLoad: _onPickLoad,
+        );
+
+        // Inactive viewer first (bottom), active one on top.
         return Stack(
-          children: [
-            AnimatedPositioned(
-              duration: _snapping
-                  ? const Duration(milliseconds: 300)
-                  : Duration.zero,
-              curve: Curves.easeOut,
-              left: _pos.dx,
-              top: _pos.dy,
-              child: IgnorePointer(
-                ignoring: !_mikeVisible,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanStart: _onPanStart,
-                  onPanUpdate: _onPanUpdate,
-                  onPanEnd: _onPanEnd,
-                  // Inner IgnorePointer: WebView never receives raw touches, so
-                  // model-viewer's camera rotation is fully disabled.
-                  child: IgnorePointer(
-                    child: AnimatedOpacity(
-                      opacity: _mikeVisible ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: SizedBox(
-                        width: _mikeSize,
-                        height: _mikeSize,
-                        child: Flutter3DViewer(
-                          // Key tied to src: forces a clean reload + fresh
-                          // onLoad whenever the GLB file changes.
-                          key: ValueKey(_currentSrc),
-                          src: _currentSrc,
-                          controller: _controller,
-                          activeGestureInterceptor: false,
-                          onLoad: _onViewerLoad,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
+          children: _scanActive
+              ? [pickViewer, scanViewer]
+              : [scanViewer, pickViewer],
         );
       },
     );

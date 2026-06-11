@@ -105,7 +105,10 @@ class _PlayerPageState extends State<PlayerPage> {
       _clickedCurrent  = false;
       // Auto-fire the 2D effect immediately.
       _effectKey++;
-      _effectEmotion = highlight.emotion;
+      // Use the English `effect` key (e.g. "angry"); fall back to the emotion
+      // field only if effect is empty (older data).
+      _effectEmotion =
+          highlight.effect.trim().isNotEmpty ? highlight.effect : highlight.emotion;
     });
 
     _logger.log(

@@ -11,10 +11,24 @@ const _kValidEffects = {
   'serious', 'shy', 'indifferent',
 };
 
+// Safety net: map legacy/Chinese emotion labels to the nearest English key,
+// in case a highlight only carries a Chinese `emotion` and no English `effect`.
+const _kChineseToEffect = {
+  '震惊': 'shocked', '惊讶': 'surprised', '惊喜': 'surprised',
+  '愤怒': 'angry', '冷漠': 'indifferent', '委屈': 'pity',
+  '甜蜜': 'sweet', '温馨': 'sweet', '感激': 'sweet',
+  '暧昧': 'flirtatious', '挑逗': 'flirtatious', '调皮': 'playful',
+  '好奇': 'curious', '期待': 'expectant', '担忧': 'worried',
+  '悬念': 'tense', '紧张': 'tense', '尴尬': 'awkward',
+  '得意': 'proud', '爽快': 'satisfied', '满足': 'satisfied',
+  '坚定': 'determined', '严肃': 'serious', '害羞': 'shy',
+  '幽默': 'playful', '无奈': 'helpless', '浪漫': 'romantic',
+};
+
 String _resolveEffect(String raw) {
   final lower = raw.toLowerCase().trim();
   if (_kValidEffects.contains(lower)) return lower;
-  return 'surprised';
+  return _kChineseToEffect[raw.trim()] ?? 'surprised';
 }
 
 const _kGifSize = 220.0;
