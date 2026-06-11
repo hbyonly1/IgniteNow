@@ -55,6 +55,41 @@ def test_create_ai_analyze_job_records_status(
     assert data["rq_job_id"] == "rq-test"
 
 
+def test_create_subtitle_asr_job_records_status(
+    client,
+    db_session: Session,
+    admin_headers,
+    demo_episode,
+    monkeypatch,
+):
+    def fake_create_and_enqueue_job(db: Session, job_type: str, payload: dict) -> Job:
+        job = Job(
+            type=job_type,
+            payload_json=f'{{"episode_id": {payload["episode_id"]}, "force": true}}',
+            status="pending",
+            progress=0,
+            rq_job_id="rq-asr-test",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job
+
+    monkeypatch.setattr(system, "create_and_enqueue_job", fake_create_and_enqueue_job)
+
+    response = client.post(
+        "/api/system/jobs",
+        headers=admin_headers,
+        json={"type": "subtitle_asr", "payload": {"episode_id": demo_episode.id, "force": True}},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["type"] == "subtitle_asr"
+    assert data["status"] == "pending"
+    assert data["rq_job_id"] == "rq-asr-test"
+
+
 def test_uploader_can_read_own_jobs(client, db_session: Session, uploader_headers):
     uploader = db_session.query(UserAccount).filter(UserAccount.username == "uploader-user").one()
     drama = Drama(title="Owned Drama")

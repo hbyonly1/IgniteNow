@@ -369,7 +369,7 @@ Content-Type: multipart/form-data
 
 AI 高光识别只允许通过系统任务异步触发，不再提供同步 HTTP 分析接口。旧 `POST /api/episodes/{episode_id}/analyze` 已删除，管理后台和 uploader 都必须使用 `POST /api/system/jobs` 创建 `ai_analyze` 任务。
 
-AI 高光识别调用 LLM 进行识别，需配置 `LLM_API_KEY`。未配置或调用失败时，任务标记为 `failed`，`job.error` 和 `episode.analyze_error` 中会记录失败原因；不存在降级到关键词规则的 fallback 路径。任务执行成功后会写入 `draft` 高光供审核发布。
+AI 高光识别调用 LLM 进行识别，优先读取系统设置中的 LLM 配置，其次读取环境变量 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_TIMEOUT_SECONDS`。未配置 API Key 或调用失败时，任务标记为 `failed`，`job.error` 和 `episode.analyze_error` 中会记录失败原因；不存在降级到关键词规则的 fallback 路径。任务执行成功后会写入 `draft` 高光供审核发布。
 
 ### `GET /api/analysis/queue`
 
@@ -421,7 +421,7 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 
 ## 系统任务 API
 
-系统任务使用 RQ + Redis 执行，`job` / `job_log` 表保存后台可查询的业务状态与任务日志。第一版已接入 `ai_analyze`，`ocr_import` 作为后续任务类型预留。`verify_demo_chain` 不属于业务任务类型，演示链路验收继续通过 `backend/scripts/verify_demo_chain.py` 命令行脚本执行。
+系统任务使用 RQ + Redis 执行，`job` / `job_log` 表保存后台可查询的业务状态与任务日志。当前已接入 `subtitle_asr` 和 `ai_analyze`：前者使用本地 faster-whisper 从视频音频识别字幕并写回剧集，后者基于字幕生成高光。`ocr_import` 作为后续任务类型预留。`verify_demo_chain` 不属于业务任务类型，演示链路验收继续通过 `backend/scripts/verify_demo_chain.py` 命令行脚本执行。
 
 ### `GET /api/system/jobs`
 
@@ -431,7 +431,7 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 查询参数：
 
 - `status`: 可选，`pending`、`running`、`success`、`failed`、`canceled`
-- `type`: 可选，当前可用 `ai_analyze`
+- `type`: 可选，当前可用 `subtitle_asr`、`ai_analyze`
 - `limit`: 可选，默认 50，最大 200
 
 响应 `data`：
@@ -457,7 +457,7 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 ### `POST /api/system/jobs`
 
 创建并提交 RQ 任务。需要 `admin` 或 `uploader` Bearer token。
-创建 `ai_analyze` 任务时，`admin` 可提交任意剧集，`uploader` 只能提交自己名下剧集。
+创建 `subtitle_asr` 或 `ai_analyze` 任务时，`admin` 可提交任意剧集，`uploader` 只能提交自己名下剧集。
 
 ```json
 {
@@ -469,13 +469,27 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 }
 ```
 
+本地字幕识别任务：
+
+```json
+{
+  "type": "subtitle_asr",
+  "payload": {
+    "episode_id": 1,
+    "force": false
+  }
+}
+```
+
 规则：
 
 - `episode_id` 必须存在。
-- 创建任务只负责入队，不在请求线程内执行 AI 分析。
-- worker 执行时处理字幕缺失、重复分析、AI 调用失败、非法 JSON、非法高光类型和时间范围错误。
+- 创建任务只负责入队，不在请求线程内执行 AI 分析或字幕识别。
+- `subtitle_asr` 只支持服务端本地可访问的视频文件路径或 `/uploads/...` 视频；worker 使用 `ffmpeg` 抽取 16kHz 单声道音频，再用 faster-whisper 转写，生成 SRT 并写入 `episode.subtitle_content`、`episode.subtitle_url`、`episode.subtitle_original_name`，同时把 `asset_status` 更新为 `ready`。
+- `subtitle_asr.payload.force=false` 时，如果剧集已有 `subtitle_content`，任务会直接成功并跳过覆盖；`force=true` 时会重新识别并覆盖字幕。
+- `ai_analyze` worker 执行时处理字幕缺失、重复分析、AI 调用失败、非法 JSON、非法高光类型和时间范围错误。
 - Redis/RQ 不可用时返回 `503`，并在 `job` 中记录失败状态。
-- 当前仅实现 `ai_analyze`；其他任务类型返回 `400`。
+- 当前仅实现 `subtitle_asr` 与 `ai_analyze`；其他任务类型返回 `400`。
 
 ### `GET /api/system/jobs/{job_id}`
 
@@ -546,13 +560,21 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 
 ### `GET /api/system/settings`
 
-读取系统设置。需要 `role=admin` 的 Bearer token。`system_setting` 表仅保留通用持久化结构；未接入真实运行逻辑的配置项不在接口中暴露。
+读取系统设置。需要 `role=admin` 的 Bearer token。当前已接入 LLM 配置，后续 AI 分析任务会优先使用这里保存的配置。接口不会回显 `api_key` 明文，只返回 `api_key_configured`。
 
 响应 `data`：
 
 ```json
 {
-  "settings": {},
+  "settings": {
+    "llm": {
+      "enabled": true,
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-4o-mini",
+      "timeout_seconds": 90,
+      "api_key_configured": true
+    }
+  },
   "updated_at": null,
   "updated_by_user_id": null
 }
@@ -560,7 +582,22 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 
 ### `PUT /api/system/settings`
 
-保存系统设置。需要 `role=admin` 的 Bearer token。当前没有已接入真实运行逻辑的设置项，请求体只接受空对象 `{}`；旧的占位配置字段会返回 `422`。
+保存系统设置。需要 `role=admin` 的 Bearer token。请求体：
+
+```json
+{
+  "llm": {
+    "enabled": true,
+    "api_key": "sk-...",
+    "clear_api_key": false,
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "timeout_seconds": 90
+  }
+}
+```
+
+`api_key` 为空且 `clear_api_key=false` 时保留已保存密钥；`clear_api_key=true` 时清除已保存密钥。接口响应仍不回显密钥明文。旧的占位配置字段会返回 `422`。
 
 ### `GET /api/settings/prompt-template`
 

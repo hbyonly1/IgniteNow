@@ -107,7 +107,7 @@ def test_analysis_creates_draft_highlights_without_status_from_ai(
     monkeypatch.setattr(
         _svc,
         "analyze_subtitle_text",
-        lambda _content: {
+        lambda _content, llm_config=None: {
             "highlights": [
                 {
                     "start_time": 1.0,

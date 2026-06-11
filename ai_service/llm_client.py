@@ -2,7 +2,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import requests
 
@@ -71,14 +71,18 @@ def _normalize_highlight(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def analyze_with_llm(subtitle_payload: str) -> dict[str, list[dict[str, Any]]]:
-    api_key = os.getenv("LLM_API_KEY")
-    if not api_key:
-        raise RuntimeError("LLM_API_KEY is not configured; AI analysis requires a valid API key")
+def analyze_with_llm(subtitle_payload: str, llm_config: Optional[dict[str, Any]] = None) -> dict[str, list[dict[str, Any]]]:
+    config = llm_config or {}
+    if config.get("enabled") is False:
+        raise RuntimeError("LLM analysis is disabled in system settings")
 
-    base_url = os.getenv("LLM_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
-    model = os.getenv("LLM_MODEL", DEFAULT_MODEL)
-    timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "90"))
+    api_key = str(config.get("api_key") or os.getenv("LLM_API_KEY") or "").strip()
+    if not api_key:
+        raise RuntimeError("LLM API key is not configured; set it in System Settings or LLM_API_KEY")
+
+    base_url = str(config.get("base_url") or os.getenv("LLM_BASE_URL") or DEFAULT_BASE_URL).rstrip("/")
+    model = str(config.get("model") or os.getenv("LLM_MODEL") or DEFAULT_MODEL)
+    timeout = float(config.get("timeout_seconds") or os.getenv("LLM_TIMEOUT_SECONDS", "90"))
 
     system_prompt = _load_prompt_template()
     user_prompt = (

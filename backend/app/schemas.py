@@ -8,7 +8,7 @@ HIGHLIGHT_TYPES = {"conflict", "reversal", "sweet", "satisfying", "suspense"}
 HIGHLIGHT_STATUSES = {"draft", "published", "rejected", "archived"}
 ACTION_TYPES = {"impression", "click", "ignore"}
 EFFECTS = {"anger_bar", "screen_flash", "heart_rain", "boom_effect", "countdown"}
-JOB_TYPES = {"ai_analyze", "ocr_import"}
+JOB_TYPES = {"ai_analyze", "subtitle_asr", "ocr_import"}
 JOB_STATUSES = {"pending", "running", "success", "failed", "canceled"}
 PUBLISH_CHANNELS = {"android"}
 PUBLISH_STATUSES = {"pending", "publishing", "success", "failed", "canceled"}
@@ -393,8 +393,19 @@ class PublishJobOut(BaseModel):
     items: list[PublishJobItemOut] = Field(default_factory=list)
 
 
+class LLMSettingsUpdate(BaseModel):
+    enabled: bool = True
+    api_key: str = Field(default="", max_length=512)
+    clear_api_key: bool = False
+    base_url: str = Field(default="", max_length=500)
+    model: str = Field(default="", max_length=120)
+    timeout_seconds: float = Field(default=90, ge=5, le=300)
+
+
 class SystemSettingsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    llm: Optional[LLMSettingsUpdate] = None
 
 
 class PromptTemplateUpdate(BaseModel):

@@ -54,6 +54,7 @@ const highlightTypeMeta = {
   satisfying: { label: '爆点', color: 'orange' },
   suspense: { label: '悬念', color: 'cyan' },
 };
+const highlightTypeOptions = Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }));
 
 const highlightStatusMeta = {
   draft: { label: '待审核', color: 'warning' },
@@ -63,6 +64,10 @@ const highlightStatusMeta = {
 };
 
 const editableHighlightStatuses = ['draft', 'published', 'rejected'];
+function emotionForHighlightType(type) {
+  return highlightTypeMeta[type]?.label ?? highlightTypeMeta.satisfying.label;
+}
+
 function parsePayload(value) {
   try {
     return JSON.parse(value || '{}');
@@ -1017,11 +1022,11 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
           start_time: parseTimecode(nextDraft.start_time),
           end_time: parseTimecode(nextDraft.end_time),
           highlight_type: nextDraft.highlight_type,
-          emotion: nextDraft.emotion || '人工添加',
+          emotion: nextDraft.emotion || emotionForHighlightType(nextDraft.highlight_type),
           intensity: 0.5,
           confidence: Number(nextDraft.confidence ?? 0) / 100,
           trigger_score: 0.5,
-          reason: nextDraft.reason || '人工添加高光点',
+          reason: nextDraft.reason || '手动创建高光区间',
           button_text: '精彩片段',
           effect: 'boom_effect',
           status: nextDraft.status,
@@ -1081,11 +1086,11 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
             start_time: parseTimecode(item.start_time),
             end_time: parseTimecode(item.end_time),
             highlight_type: item.highlight_type,
-            emotion: item.emotion || '人工添加',
+            emotion: item.emotion || emotionForHighlightType(item.highlight_type),
             intensity: 0.5,
             confidence: Number(item.confidence ?? 0) / 100,
             trigger_score: 0.5,
-            reason: item.reason || '人工添加高光点',
+            reason: item.reason || '手动创建高光区间',
             button_text: '精彩片段',
             effect: 'boom_effect',
             status: item.status,
@@ -1224,24 +1229,25 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
     if (endTime <= startTime) {
       endTime = startTime + 1;
     }
+    const nextType = draft?.highlight_type && highlightTypeMeta[draft.highlight_type] ? draft.highlight_type : 'satisfying';
     const created = {
       id: `tmp-${Date.now()}`,
       episode_id: episode.id,
       start_time: startTime,
       end_time: endTime,
-      highlight_type: draft?.highlight_type ?? 'satisfying',
-      emotion: '人工添加',
+      highlight_type: nextType,
+      emotion: emotionForHighlightType(nextType),
       intensity: 0.5,
       confidence: 0.5,
       trigger_score: 0.5,
-      reason: draft?.reason || '人工添加高光点',
+      reason: draft?.reason || '手动创建高光区间',
       button_text: '精彩片段',
       effect: 'boom_effect',
       status: draft?.status ?? 'draft',
     };
     const nextDraft = highlightToDraft(created);
     setHighlights((current) => [...current, created].sort((a, b) => a.start_time - b.start_time));
-    setDirtyDrafts((current) => ({ ...current, [created.id]: { ...nextDraft, emotion: '人工添加' } }));
+    setDirtyDrafts((current) => ({ ...current, [created.id]: { ...nextDraft, emotion: created.emotion } }));
     setSelectedId(created.id);
     setDraft(nextDraft);
     if (videoRef.current) {
@@ -1287,7 +1293,7 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
       start_time: splitTime,
       reason: selected.reason || '拆分高光区间',
       status: 'draft',
-      emotion: selected.emotion || '人工添加',
+      emotion: selected.emotion || emotionForHighlightType(selected.highlight_type),
     };
     const rightDraft = highlightToDraft(right);
     setHighlights((current) => [...current.map((item) => (item.id === selected.id ? { ...item, end_time: splitTime } : item)), right].sort((a, b) => a.start_time - b.start_time));
@@ -1417,7 +1423,7 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
                 <div className="highlight-edit-heading-actions">
                   <Button
                     aria-label="新增高光"
-                    className="highlight-manual-action"
+                    className="highlight-add-action"
                     icon={<PlusOutlined />}
                     size="small"
                     title="新增高光"
@@ -1474,8 +1480,9 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
                     <label>
                       <span>高光类型</span>
                       <Select
+                        className="upload-category-select"
                         value={draft.highlight_type}
-                        options={Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }))}
+                        options={highlightTypeOptions}
                         onChange={(value) => updateDraft({ highlight_type: value })}
                       />
                     </label>
@@ -1496,6 +1503,7 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
                     <label>
                       <span>审核状态</span>
                       <Select
+                        className="upload-category-select"
                         value={draft.status}
                         options={editableHighlightStatuses.map((value) => ({ value, label: highlightStatusMeta[value].label }))}
                         onChange={(value) => updateDraft({ status: value })}
@@ -1536,7 +1544,7 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
                   <Select
                     value={typeFilter}
                     onChange={setTypeFilter}
-                    options={[{ value: 'all', label: '全部类型' }, ...Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }))]}
+                    options={[{ value: 'all', label: '全部类型' }, ...highlightTypeOptions]}
                   />
                   <Select
                     value={statusFilter}

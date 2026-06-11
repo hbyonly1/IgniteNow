@@ -78,6 +78,14 @@ LLM_API_KEY=
 LLM_BASE_URL=https://api.openai.com/v1
 # LLM 模型名称。
 LLM_MODEL=gpt-4o-mini
+
+# 本地字幕识别模型，subtitle_asr 任务使用 faster-whisper。
+WHISPER_MODEL=small
+# CPU 默认使用 cpu/int8；NVIDIA GPU 环境可改为 cuda/float16。
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
+# 识别语言；中文短剧默认 zh，留空则由 Whisper 自动判断。
+WHISPER_LANGUAGE=zh
 ```
 
 ## 部署方式
@@ -141,6 +149,11 @@ nano .env
 docker compose up --build -d
 # 查看日志
 docker compose logs -f app
+```
+
+```bash
+# 停止并删除容器
+docker compose down -v
 ```
 
 ## 访问

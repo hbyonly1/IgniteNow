@@ -21,7 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg bash && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg bash libgomp1 && rm -rf /var/lib/apt/lists/*
 
 RUN addgroup --system ignitenow && adduser --system --ingroup ignitenow ignitenow
 

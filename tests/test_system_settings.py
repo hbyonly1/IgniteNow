@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -28,21 +30,35 @@ def test_system_settings_defaults_and_save(
     get_response = client.get("/api/system/settings", headers=admin_headers)
     assert get_response.status_code == 200
     data = get_response.json()["data"]
-    assert data["settings"] == {}
+    assert data["settings"]["llm"]["enabled"] is True
+    assert data["settings"]["llm"]["api_key_configured"] is False
 
     save_response = client.put(
         "/api/system/settings",
         headers=admin_headers,
-        json={},
+        json={
+            "llm": {
+                "enabled": True,
+                "api_key": "sk-test",
+                "base_url": "https://api.example.com/v1",
+                "model": "test-model",
+                "timeout_seconds": 45,
+            }
+        },
     )
 
     assert save_response.status_code == 200
     saved = save_response.json()["data"]
-    assert saved["settings"] == {}
-    assert saved["updated_by_user_id"] is None
+    assert saved["settings"]["llm"]["base_url"] == "https://api.example.com/v1"
+    assert saved["settings"]["llm"]["model"] == "test-model"
+    assert saved["settings"]["llm"]["api_key_configured"] is True
+    assert "api_key" not in saved["settings"]["llm"]
+    assert saved["updated_by_user_id"] is not None
 
     rows = db_session.query(SystemSetting).all()
-    assert rows == []
+    assert len(rows) == 1
+    stored = json.loads(rows[0].value_json)
+    assert stored["api_key"] == "sk-test"
 
 
 def test_system_settings_reject_unwired_options(client: TestClient, admin_headers: dict[str, str]) -> None:

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Episode, HighlightEvent
 from .highlight_service import create_highlight
+from .settings_service import load_llm_config
 
 # ai_service 与 backend 同属仓库根目录，确保 import 路径可用
 _repo_root = str(Path(__file__).resolve().parents[3])
@@ -44,7 +45,7 @@ def analyze_episode_highlights(db: Session, episode: Episode, force_reanalyze: b
             # 解析失败时直接把原始内容传给 LLM，保留 fallback 能力
             subtitle_payload = raw_content
 
-        result = analyze_subtitle_text(subtitle_payload)
+        result = analyze_subtitle_text(subtitle_payload, llm_config=load_llm_config(db))
         if force_reanalyze:
             db.query(HighlightEvent).filter(HighlightEvent.episode_id == episode.id).delete()
 

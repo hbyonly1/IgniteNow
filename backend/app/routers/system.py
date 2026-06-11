@@ -1,5 +1,4 @@
 import json
-from copy import deepcopy
 from pathlib import Path
 from typing import Optional
 
@@ -11,38 +10,13 @@ from ..models import Episode, Job, JobLog, SystemLog, SystemSetting
 from ..schemas import JOB_TYPES, JobCreate, JobLogOut, JobOut, PromptTemplateUpdate, SystemSettingsUpdate
 from ..services.auth_service import ADMIN_ROLE, UPLOADER_ROLE
 from ..services.job_service import create_and_enqueue_job, retry_job
+from ..services.settings_service import public_system_settings
 from .common import ok, require_admin, require_roles
 
 router = APIRouter(prefix="/system")
 settings_router = APIRouter(prefix="/settings")
 require_workspace_user = require_roles(ADMIN_ROLE, UPLOADER_ROLE)
-
-DEFAULT_SYSTEM_SETTINGS = {}
 PROMPT_TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "ai_service" / "prompt_template.md"
-
-
-def _load_settings(db: Session) -> dict:
-    settings = deepcopy(DEFAULT_SYSTEM_SETTINGS)
-    rows = db.query(SystemSetting).all()
-    updated_at = None
-    updated_by_user_id = None
-    for row in rows:
-        if row.key not in settings:
-            continue
-        try:
-            value = json.loads(row.value_json or "{}")
-        except json.JSONDecodeError:
-            value = {}
-        if isinstance(value, dict):
-            settings[row.key].update(value)
-        if not updated_at or row.updated_at > updated_at:
-            updated_at = row.updated_at
-            updated_by_user_id = row.updated_by_user_id
-    return {
-        "settings": settings,
-        "updated_at": updated_at.isoformat() if updated_at else None,
-        "updated_by_user_id": updated_by_user_id,
-    }
 
 
 def _can_access_episode(user, episode: Episode) -> bool:
@@ -74,7 +48,7 @@ def _job_out(job: Job) -> dict:
 
 @router.get("/settings")
 def get_system_settings(user=Depends(require_admin), db: Session = Depends(get_db)):
-    return ok(_load_settings(db))
+    return ok(public_system_settings(db))
 
 
 @router.put("/settings")
@@ -83,10 +57,40 @@ def update_system_settings(
     user=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    payload.model_dump()
-    db.query(SystemSetting).delete()
+    existing = db.get(SystemSetting, "llm")
+    if payload.llm is None:
+        if existing:
+            db.delete(existing)
+        db.commit()
+        return ok(public_system_settings(db), "settings saved")
+
+    llm_payload = payload.llm.model_dump()
+    stored = {}
+    if existing:
+        try:
+            stored = json.loads(existing.value_json or "{}")
+        except json.JSONDecodeError:
+            stored = {}
+    next_llm = {
+        "enabled": llm_payload["enabled"],
+        "base_url": llm_payload["base_url"].strip(),
+        "model": llm_payload["model"].strip(),
+        "timeout_seconds": llm_payload["timeout_seconds"],
+    }
+    if llm_payload["clear_api_key"]:
+        next_llm["api_key"] = ""
+    elif llm_payload["api_key"].strip():
+        next_llm["api_key"] = llm_payload["api_key"].strip()
+    else:
+        next_llm["api_key"] = stored.get("api_key", "")
+
+    if existing:
+        existing.value_json = json.dumps(next_llm, ensure_ascii=False)
+        existing.updated_by_user_id = user.id
+    else:
+        db.add(SystemSetting(key="llm", value_json=json.dumps(next_llm, ensure_ascii=False), updated_by_user_id=user.id))
     db.commit()
-    return ok(_load_settings(db), "settings saved")
+    return ok(public_system_settings(db), "settings saved")
 
 
 @settings_router.get("/prompt-template")
@@ -125,7 +129,7 @@ def list_jobs(
 def create_job(payload: JobCreate, user=Depends(require_workspace_user), db: Session = Depends(get_db)):
     if payload.type not in JOB_TYPES:
         raise HTTPException(status_code=400, detail="unsupported job type")
-    if payload.type != "ai_analyze":
+    if payload.type not in {"ai_analyze", "subtitle_asr"}:
         raise HTTPException(status_code=400, detail="job type is not implemented yet")
     episode_id = payload.payload.get("episode_id")
     if not isinstance(episode_id, int):
@@ -135,6 +139,8 @@ def create_job(payload: JobCreate, user=Depends(require_workspace_user), db: Ses
         raise HTTPException(status_code=404, detail="episode not found")
     if not _can_access_episode(user, episode):
         raise HTTPException(status_code=403, detail="episode is not owned by current uploader")
+    if payload.type == "subtitle_asr" and not (episode.video_url or "").strip():
+        raise HTTPException(status_code=400, detail="episode.video_url is required")
     try:
         job = create_and_enqueue_job(db, payload.type, payload.payload)
     except RuntimeError as exc:

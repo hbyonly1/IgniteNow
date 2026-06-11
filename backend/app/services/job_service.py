@@ -81,12 +81,19 @@ def get_queue():
 
 
 def enqueue_job(db: Session, job: Job) -> Job:
-    if job.type != "ai_analyze":
+    from ..jobs.tasks import run_ai_analyze_job, run_subtitle_asr_job
+
+    task_map = {
+        "ai_analyze": (run_ai_analyze_job, 600),
+        "subtitle_asr": (run_subtitle_asr_job, 1800),
+    }
+    task_config = task_map.get(job.type)
+    if task_config is None:
         raise ValueError(f"unsupported job type: {job.type}")
-    from ..jobs.tasks import run_ai_analyze_job
+    task, timeout = task_config
 
     queue = get_queue()
-    rq_job = queue.enqueue(run_ai_analyze_job, job.id, job_timeout=600)
+    rq_job = queue.enqueue(task, job.id, job_timeout=timeout)
     job.rq_job_id = rq_job.id
     add_job_log(db, job, "job submitted to RQ", context={"rq_job_id": rq_job.id})
     db.commit()

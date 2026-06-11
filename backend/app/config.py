@@ -16,6 +16,10 @@ class Settings:
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "120"))
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     rq_queue_name: str = os.getenv("RQ_QUEUE_NAME", "ignitenow")
+    whisper_model: str = os.getenv("WHISPER_MODEL", "small")
+    whisper_device: str = os.getenv("WHISPER_DEVICE", "cpu")
+    whisper_compute_type: str = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+    whisper_language: str = os.getenv("WHISPER_LANGUAGE", "zh") or ""
 
 
 settings = Settings()

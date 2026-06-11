@@ -4,6 +4,8 @@
 
 - AI 分析列表确定使用 `GET /api/analysis/queue` 聚合接口，后端统一返回 episode、drama、素材状态和最新任务信息；任务创建、重试、详情与日志仍由 `/api/system/jobs` 相关接口负责。
 - 管理后台视频上传确定使用 `ffprobe` 自动解析视频元数据，部署环境必须包含 FFmpeg/ffprobe。
+- 本地字幕识别先接入 `subtitle_asr` RQ 任务，使用 `ffmpeg` 从本地上传视频抽取音频，再通过 faster-whisper 生成 SRT 并写回 `episode.subtitle_content`；第一阶段只支持服务端本地可访问的视频路径或 `/uploads/...` 视频，不处理远程 HTTP 视频与画面硬字幕 OCR。
+- faster-whisper 默认运行参数通过环境变量配置：`WHISPER_MODEL=small`、`WHISPER_DEVICE=cpu`、`WHISPER_COMPUTE_TYPE=int8`、`WHISPER_LANGUAGE=zh`；GPU 或更大模型作为部署配置调整，不进入 API 契约。
 - `user_interaction_log` 后续增加 `play_session_id`，Android 每次进入播放页生成 UUID，并在 impression、click、ignore 回传中复用。
 - 移动端内容上传链路确定删除，包括 `POST /api/uploads/episodes`、上传页面和入口；Android 只保留播放端 API 与互动回传 API。
 - `verify_demo_chain` 从系统任务枚举删除，同名脚本继续作为命令行交付验收工具；`ocr_import` 暂保留为未实现的预留任务类型，不在 UI 暴露。
@@ -40,6 +42,7 @@
 - 系统设置第一阶段保留 `system_setting` 通用表与 `/api/system/settings` 读写接口，但不暴露未接入真实运行逻辑的占位配置项。
 - 已删除原 `ai`、`review`、`player`、`upload`、`security` 分组中的占位字段；后续新增系统设置前，必须先接入对应业务逻辑，再同步 API 契约、前端表单和表数据。
 - 系统设置仅允许 `admin` 访问，`uploader` 不能读取或修改系统级配置，避免上传账号影响全局运行策略。
+- 2026-06-11 起系统设置新增已接入真实运行逻辑的 `llm` 分组：AI 分析任务优先读取数据库中的 API Key、Base URL、模型和超时配置；接口不回显 API Key 明文，未填写新 Key 时保留已有值。
 
 ## 2026-06-11 阶段 2 内容资产字段补齐
 

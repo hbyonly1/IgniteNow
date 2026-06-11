@@ -3,6 +3,10 @@
 ## 2026-06-11 AI 分析功能完善计划执行
 
 ### 已完成
+- 后端接入本地字幕识别任务 `subtitle_asr`：复用现有 `/api/system/jobs` + RQ worker 机制，worker 通过 `ffmpeg` 从本地视频抽取 16kHz 单声道音频，再调用 faster-whisper 转写字幕。
+- 新增 `backend/app/services/subtitle_asr_service.py`，支持把识别段落转换为 SRT，写入 `episode.subtitle_content`、生成字幕文件路径并更新 `subtitle_url`、`subtitle_original_name` 和 `asset_status=ready`；已有字幕时默认跳过，`payload.force=true` 可强制覆盖。
+- 新增 Whisper 运行配置环境变量 `WHISPER_MODEL`、`WHISPER_DEVICE`、`WHISPER_COMPUTE_TYPE`、`WHISPER_LANGUAGE`，Docker 运行镜像补充 faster-whisper 依赖和 `libgomp1`。
+- 修复 Docker Compose 容器内数据库连接地址：`app` 和 `worker` 在 compose 层显式覆盖 `DATABASE_URL` 为 `postgres` 服务名，避免 `.env` 使用 `localhost` 时容器错误连接自身；同步校正 `.env.example` 的 Docker Compose 示例地址。
 - 对照 `docs/implementation_plan.md` 确认复选框级联问题已修复：AI 分析表格 `rowSelection.checkStrictly=true`，短剧父行与子剧集勾选互不级联。
 - 确认字幕预处理已接入：AI 分析前先使用 `ai_service.subtitle_parser.parse_subtitle_text` 将 SRT 字幕解析为结构化时间段，再格式化为 `[start - end] text` 形式传给分析器，解析失败时保留原始文本兜底。
 - AI 分析页新增高光审核详情弹窗：点击剧集行“高光审核”后加载 `GET /api/episodes/{id}/highlights`，展示顶部剧集信息、左侧视频占位与时间轴高光点、选中高光编辑区、右侧高光列表筛选和底部统计。
@@ -30,8 +34,12 @@
 - 高光审核弹窗的右上角关闭、遮罩关闭和底部取消统一接入未保存修改提醒，存在已编辑未保存高光时会先确认是否放弃修改。
 - 修复上传/审核 Modal 的按钮基础样式根因：移除 `.upload-drama-modal` 通用控件选择器里对 `.ant-btn` 的白底强制覆盖，避免 primary 按钮未悬停时被刷成白色。
 - 系统设置页新增 AI 识别 Prompt 编辑器；后端新增 `GET/PUT /api/settings/prompt-template`，直接读写 `ai_service/prompt_template.md`，保存后影响后续 LLM 分析任务。
+- 系统设置页新增 LLM 运行配置：支持保存启用状态、API Key、Base URL、模型和超时时间；后端 AI 分析任务优先读取 `system_setting.llm`，再回退到环境变量，API Key 不会通过读取接口明文回显。
 
 ### 已验证
+- `python -m pytest tests/test_subtitle_asr.py tests/test_jobs.py --basetemp .codex-pytest-tmp` 覆盖字幕识别服务写回 SRT、已有字幕跳过和 `subtitle_asr` 任务创建。
+- `docker compose config` 渲染通过，确认 `app` 与 `worker` 的 `DATABASE_URL` 均为 `postgresql://...@postgres:5432/ignitenow`。
+- `LOG_DIR=backend/logs python -m pytest tests/test_system_settings.py tests/test_analysis.py --basetemp .codex-pytest-tmp` 通过，覆盖 LLM 设置保存、密钥不回显和 AI 分析配置透传。
 - `npm exec eslint .` 在 `frontend/admin_web` 下通过。
 - `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
 - `git diff --check` 通过。
