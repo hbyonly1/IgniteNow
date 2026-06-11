@@ -9,7 +9,7 @@ import {
   Pagination,
   Popconfirm,
   Progress,
-  Switch,
+  Radio,
   Table,
   Tag,
   Upload,
@@ -23,11 +23,9 @@ import {
   DownOutlined,
   FileTextOutlined,
   InboxOutlined,
-  PlayCircleOutlined,
   PlusOutlined,
   SearchOutlined,
   SendOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
 import { getAdminUserRole } from '../../auth.js';
 import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
@@ -109,40 +107,25 @@ function extractFilenameFromUrl(url) {
   return parts[parts.length - 1] || '未命名文件';
 }
 
-function analysisStatusMeta(status) {
-  if (status === 'processing') {
-    return { label: '分析中', color: 'processing' };
+function episodeMaterialStatus(episode) {
+  if (!episode?.video_url) {
+    return { label: '缺视频', color: 'error' };
   }
-  if (status === 'success') {
-    return { label: '已完成', color: 'success' };
+  if (!hasSubtitle(episode)) {
+    return { label: '缺字幕', color: 'warning' };
   }
-  if (status === 'failed') {
-    return { label: '失败', color: 'error' };
-  }
-  return { label: '待分析', color: 'warning' };
+  return { label: '完整', color: 'success' };
 }
 
-function publishStatusMeta(episode) {
-  if (Number(episode.published_highlight_count ?? 0) > 0) {
-    return { label: '已发布', color: 'success' };
-  }
-  if (Number(episode.draft_highlight_count ?? 0) > 0) {
-    return { label: '待发布', color: 'warning' };
-  }
-  return { label: '草稿', color: 'default' };
+function fileDisplayName(url, originalName, fallback = '-') {
+  return originalName || extractFilenameFromUrl(url) || fallback;
 }
 
-function episodeCompleteness(episode) {
-  if (!episode) {
-    return 0;
+function subtitleDisplayName(episode) {
+  if (episode.subtitle_original_name || episode.subtitle_url) {
+    return fileDisplayName(episode.subtitle_url, episode.subtitle_original_name);
   }
-  const checks = [
-    Boolean(episode.video_url),
-    hasSubtitle(episode),
-    episode.analyze_status === 'success',
-    Number(episode.draft_highlight_count ?? 0) + Number(episode.published_highlight_count ?? 0) > 0,
-  ];
-  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+  return episode.subtitle_content ? '已录入字幕' : '';
 }
 
 export default function DramasPage() {
@@ -160,7 +143,6 @@ export default function DramasPage() {
   const [episodeLoading, setEpisodeLoading] = useState(false);
   const [episodeQuery, setEpisodeQuery] = useState('');
   const [episodeCurrentPage, setEpisodeCurrentPage] = useState(1);
-  const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
   const [selectedEpisodeRowKeys, setSelectedEpisodeRowKeys] = useState([]);
   const [coverFileList, setCoverFileList] = useState([]);
   const [wideCoverFileList, setWideCoverFileList] = useState([]);
@@ -219,10 +201,11 @@ export default function DramasPage() {
     return filteredEpisodes.slice(start, start + episodePageSize);
   }, [episodeEffectivePage, filteredEpisodes]);
 
-  const selectedEpisode = useMemo(
-    () => episodes.find((episode) => episode.id === selectedEpisodeId) ?? null,
-    [episodes, selectedEpisodeId],
-  );
+  const episodeMaterialSummary = useMemo(() => ({
+    videoCount: episodes.filter((episode) => episode.video_url).length,
+    subtitleCount: episodes.filter(hasSubtitle).length,
+    incompleteCount: episodes.filter((episode) => !episode.video_url || !hasSubtitle(episode)).length,
+  }), [episodes]);
 
   const loadDramas = async () => {
     setLoading(true);
@@ -242,7 +225,6 @@ export default function DramasPage() {
       const response = await apiClient.get('/api/episodes', { params: { drama_id: drama.id } });
       const nextEpisodes = response.data.data ?? [];
       setEpisodes(nextEpisodes);
-      setSelectedEpisodeId(nextEpisodes[0]?.id ?? null);
       setSelectedEpisodeRowKeys([]);
       setEpisodeCurrentPage(1);
     } catch (error) {
@@ -286,10 +268,7 @@ export default function DramasPage() {
         categories: editingDrama.categories ?? [],
         keywords: editingDrama.cast_tags ?? [],
         initial_status: 'draft',
-        auto_timeline: true,
-        auto_highlight: true,
-        generate_suggestion: true,
-        analyze_after_upload: true,
+        post_upload_action: 'full',
       }
       : {
         title: '',
@@ -300,10 +279,7 @@ export default function DramasPage() {
         categories: [],
         keywords: [],
         initial_status: 'draft',
-        auto_timeline: true,
-        auto_highlight: true,
-        generate_suggestion: true,
-        analyze_after_upload: true,
+        post_upload_action: 'full',
       };
   }, [editingDrama]);
 
@@ -354,6 +330,70 @@ export default function DramasPage() {
     });
   };
 
+  const enqueueSubtitleJob = async (episodeId) => {
+    await apiClient.post('/api/system/jobs', {
+      type: 'subtitle_asr',
+      payload: { episode_id: episodeId, force: false },
+    });
+  };
+
+  const enqueueHighlightOnlyJob = async (episodeId) => {
+    await apiClient.post('/api/system/jobs', {
+      type: 'ai_analyze',
+      payload: { episode_id: episodeId, force_reanalyze: false, skip_subtitle_asr: true },
+    });
+  };
+
+  const submitPostUploadJob = async (episodeId, action) => {
+    if (action === 'subtitle') {
+      await enqueueSubtitleJob(episodeId);
+      return;
+    }
+    if (action === 'highlight') {
+      await enqueueHighlightOnlyJob(episodeId);
+      return;
+    }
+    if (action === 'full') {
+      await enqueueAnalysisJob(episodeId);
+    }
+  };
+
+  const submitEpisodeJobs = async (episodeIds, enqueue, label) => {
+    if (!episodeIds.length) {
+      return;
+    }
+    let successCount = 0;
+    let failCount = 0;
+    for (const episodeId of episodeIds) {
+      try {
+        await enqueue(episodeId);
+        successCount += 1;
+      } catch (error) {
+        failCount += 1;
+        message.error(apiErrorMessage(error, `${label}提交失败`));
+      }
+    }
+    if (successCount > 0) {
+      message.success(failCount ? `${label}已提交 ${successCount} 项，失败 ${failCount} 项` : `${label}已提交 ${successCount} 项`);
+    }
+    setSelectedEpisodeRowKeys([]);
+    await refreshManagingEpisodes();
+  };
+
+  const submitSubtitleJobs = async (episodeIds) => {
+    const targetEpisodes = episodes.filter((episode) => episodeIds.includes(episode.id));
+    const availableEpisodeIds = targetEpisodes.filter((episode) => episode.video_url).map((episode) => episode.id);
+    const skippedCount = targetEpisodes.length - availableEpisodeIds.length;
+    if (skippedCount > 0) {
+      message.warning(`已跳过 ${skippedCount} 集缺少视频的剧集`);
+    }
+    await submitEpisodeJobs(availableEpisodeIds, enqueueSubtitleJob, '字幕识别');
+  };
+
+  const submitAnalysisJobs = async (episodeIds) => {
+    await submitEpisodeJobs(episodeIds, enqueueAnalysisJob, 'AI 分析');
+  };
+
   const readTextFile = (file) =>
     new Promise((resolve, reject) => {
       const reader = new window.FileReader();
@@ -385,11 +425,10 @@ export default function DramasPage() {
 
   const episodeInitialValues = useMemo(() => {
     return {
-      episode_no: episodeModalMode === 'create' ? Math.max(0, ...episodes.map((item) => Number(item.episode_no) || 0)) + 1 : selectedEpisode?.episode_no,
-      episode_title: episodeModalMode === 'create' ? '' : selectedEpisode?.title,
-      analyze_after_upload: episodeModalMode === 'create',
+      episode_no: Math.max(0, ...episodes.map((item) => Number(item.episode_no) || 0)) + 1,
+      episode_title: '',
     };
-  }, [episodeModalMode, episodes, selectedEpisode]);
+  }, [episodes]);
 
   useEffect(() => {
     if (episodeModalOpen) {
@@ -415,12 +454,12 @@ export default function DramasPage() {
     }
     await loadEpisodes(managingDrama);
     if (preferredEpisodeId) {
-      setSelectedEpisodeId(preferredEpisodeId);
+      setSelectedEpisodeRowKeys([preferredEpisodeId]);
     }
     await loadDramas();
   };
 
-  const submitEpisodeAsset = async (values) => {
+  const submitEpisodeAsset = async () => {
     if (!managingDrama) {
       return;
     }
@@ -508,16 +547,13 @@ export default function DramasPage() {
           });
 
           try {
-            const episode = await uploadDramaEpisode(
+            await uploadDramaEpisode(
               managingDrama.id,
               { episode_title: `${managingDrama.title} 第 ${pair.episodeNo} 集` },
               pair.videoFile,
               pair.subtitleFile,
               pair.episodeNo
             );
-            if (values.analyze_after_upload) {
-              await enqueueAnalysisJob(episode.id);
-            }
             successCount++;
           } catch (e) {
             failCount++;
@@ -585,8 +621,7 @@ export default function DramasPage() {
         message.success('短剧已创建');
       }
 
-      // Batch upload episodes
-      if (dramaBatchPairs.length > 0 && dramaId) {
+      if (!editingDrama && dramaBatchPairs.length > 0 && dramaId) {
         const validPairs = dramaBatchPairs.filter(p => p.videoFile);
         if (dramaBatchPairs.length > validPairs.length) {
           message.warning('跳过部分未包含视频的文件对');
@@ -609,8 +644,8 @@ export default function DramasPage() {
               pair.subtitleFile,
               pair.episodeNo
             );
-            if (values.analyze_after_upload) {
-              await enqueueAnalysisJob(episode.id);
+            if (values.post_upload_action && values.post_upload_action !== 'none') {
+              await submitPostUploadJob(episode.id, values.post_upload_action);
             }
             successCount++;
           } catch (e) {
@@ -653,17 +688,26 @@ export default function DramasPage() {
     }
   };
 
-  const handleDeleteEpisode = async (episodeId) => {
-    try {
-      await apiClient.delete(`/api/episodes/${episodeId}`);
-      message.success('剧集已删除');
-      if (selectedEpisodeId === episodeId) {
-        setSelectedEpisodeId(null);
-      }
-      await refreshManagingEpisodes();
-    } catch (error) {
-      message.error(apiErrorMessage(error, '删除剧集失败'));
+  const handleDeleteSelectedEpisodes = async () => {
+    if (!selectedEpisodeRowKeys.length) {
+      return;
     }
+    let successCount = 0;
+    let failCount = 0;
+    for (const episodeId of selectedEpisodeRowKeys) {
+      try {
+        await apiClient.delete(`/api/episodes/${episodeId}`);
+        successCount += 1;
+      } catch (error) {
+        failCount += 1;
+        message.error(apiErrorMessage(error, '删除剧集失败'));
+      }
+    }
+    if (successCount > 0) {
+      message.success(failCount ? `已删除 ${successCount} 集，失败 ${failCount} 集` : `已删除 ${successCount} 集`);
+    }
+    setSelectedEpisodeRowKeys([]);
+    await refreshManagingEpisodes();
   };
 
   useEffect(() => {
@@ -766,7 +810,7 @@ export default function DramasPage() {
     {
       title: '剧集',
       dataIndex: 'episode_no',
-      width: 200,
+      width: 120,
       render: (_, record) => (
         <div className="episode-list-title">
           <span className="episode-list-cover">
@@ -774,70 +818,66 @@ export default function DramasPage() {
           </span>
           <span className="episode-list-copy">
             <strong>第 {record.episode_no} 集</strong>
-            <span>{record.title}</span>
           </span>
         </div>
       ),
     },
     {
-      title: '字幕状态',
-      key: 'subtitle',
-      width: 90,
-      render: (_, record) => (
-        <Tag className="drama-list-status" color={hasSubtitle(record) ? 'success' : 'warning'}>
-          {hasSubtitle(record) ? '已识别' : '待识别'}
-        </Tag>
-      ),
-    },
-    {
-      title: 'AI分析状态',
-      dataIndex: 'analyze_status',
-      width: 110,
-      render: (value) => {
-        const meta = analysisStatusMeta(value);
-        return (
-          <Tag className="drama-list-status" color={meta.color}>
-            {meta.label}
-          </Tag>
-        );
-      },
-    },
-    {
-      title: '发布状态',
-      key: 'publish_status',
-      width: 90,
+      title: '视频文件',
+      key: 'video_file',
       render: (_, record) => {
-        const meta = publishStatusMeta(record);
-        return (
-          <Tag className="drama-list-status" color={meta.color}>
-            {meta.label}
-          </Tag>
-        );
+        const filename = fileDisplayName(record.video_url, record.video_original_name, '');
+        return filename ? (
+          <span className="episode-file-cell">
+            <strong>{filename}</strong>
+            <span>{record.video_url ? '已上传' : '-'}</span>
+          </span>
+        ) : <span className="episode-file-empty">未上传</span>;
       },
+    },
+    {
+      title: '字幕文件',
+      key: 'subtitle_file',
+      render: (_, record) => {
+        const filename = subtitleDisplayName(record);
+        return filename ? (
+          <span className="episode-file-cell">
+            <strong>{filename}</strong>
+            <span>{record.subtitle_url ? '已上传' : '文本字幕'}</span>
+          </span>
+        ) : <span className="episode-file-empty">未上传</span>;
+      },
+    },
+    {
+      title: '时长',
+      dataIndex: 'duration',
+      width: 76,
+      render: (value) => formatDuration(value),
+    },
+    {
+      title: '文件大小',
+      dataIndex: 'video_file_size',
+      width: 88,
+      render: (value) => formatFileSize(value),
     },
     {
       title: '更新时间',
       key: 'created_at',
-      width: 160,
+      width: 136,
       render: (_, record) => formatDateTime(record.updated_at ?? record.created_at),
     },
     {
-      title: '',
-      key: 'delete',
-      width: 60,
-      align: 'center',
-      render: (_, record) => (
-        <Popconfirm
-          title="确认删除该剧集？"
-          description="将同时删除所有高光点，此操作不可恢复。"
-          okText="确认删除"
-          cancelText="取消"
-          okButtonProps={{ danger: true }}
-          onConfirm={() => handleDeleteEpisode(record.id)}
-        >
-          <Button danger type="default" className="drama-list-delete-action" icon={<DeleteOutlined />} title="删除剧集" />
-        </Popconfirm>
-      ),
+      title: '素材状态',
+      key: 'material_status',
+      width: 88,
+      render: (_, record) => {
+        const meta = episodeMaterialStatus(record);
+        return (
+          <Tag className="drama-list-status" color={meta.color}>
+            {meta.label}
+          </Tag>
+        );
+      },
     },
   ];
 
@@ -847,7 +887,7 @@ export default function DramasPage() {
         <section className="episode-management">
           <div className="content-page-header">
             <div className="content-page-title">
-              <h1>剧集管理</h1>
+              <h1>剧集素材管理</h1>
             </div>
             <div className="content-toolbar">
               <Input
@@ -861,9 +901,6 @@ export default function DramasPage() {
                   setEpisodeCurrentPage(1);
                 }}
               />
-              <Button icon={<UploadOutlined />} onClick={() => message.info('批量导入接口待接入')}>
-                批量导入
-              </Button>
               <Button type="primary" className="content-upload-action" icon={<PlusOutlined />} onClick={() => openEpisodeModal()}>
                 新增剧集
               </Button>
@@ -878,9 +915,9 @@ export default function DramasPage() {
               <strong>{managingDrama.title}</strong>
               <div className="episode-summary-stats">
                 <span className="neutral">共 <strong>{episodes.length}</strong> 集</span>
-                <span className="published">已发布 <strong>{episodes.filter((item) => Number(item.published_highlight_count ?? 0) > 0).length}</strong> 集</span>
-                <span className="pending">待分析 <strong>{episodes.filter((item) => item.analyze_status === 'pending').length}</strong> 集</span>
-                <span className="completed">分析完成 <strong>{episodes.filter((item) => item.analyze_status === 'success').length}</strong> 集</span>
+                <span className="completed">已有视频 <strong>{episodeMaterialSummary.videoCount}</strong> 集</span>
+                <span className="published">已有字幕 <strong>{episodeMaterialSummary.subtitleCount}</strong> 集</span>
+                <span className="pending">待补齐 <strong>{episodeMaterialSummary.incompleteCount}</strong> 集</span>
               </div>
             </div>
             <Button onClick={() => setManagingDrama(null)} icon={<ArrowLeftOutlined />}>
@@ -888,14 +925,32 @@ export default function DramasPage() {
             </Button>
           </section>
 
-          <div className="episode-management-grid">
-            <section className="episode-table-panel">
+          <section className="episode-table-panel episode-table-panel-full">
+            <div className="episode-table-body">
               <div className="analysis-filterbar episode-table-toolbar">
                 <span>已选择 {selectedEpisodeRowKeys.length} 项</span>
                 <div className="analysis-filter-actions">
-                  <Button icon={<FileTextOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量设置字幕</Button>
-                  <Button icon={<SendOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量分析</Button>
-                  <Button icon={<SendOutlined />} disabled={!selectedEpisodeRowKeys.length}>批量发布</Button>
+                  <Button icon={<FileTextOutlined />} disabled={!selectedEpisodeRowKeys.length} onClick={() => submitSubtitleJobs(selectedEpisodeRowKeys)}>
+                    批量识别字幕
+                  </Button>
+                  <Button icon={<SendOutlined />} disabled={!selectedEpisodeRowKeys.length} onClick={() => submitAnalysisJobs(selectedEpisodeRowKeys)}>
+                    批量分析高光
+                  </Button>
+                  {isAdmin ? (
+                    <Popconfirm
+                      title="确认删除选中的剧集？"
+                      description="将同时删除对应高光点，此操作不可恢复。"
+                      okText="确认删除"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                      disabled={!selectedEpisodeRowKeys.length}
+                      onConfirm={handleDeleteSelectedEpisodes}
+                    >
+                      <Button danger icon={<DeleteOutlined />} disabled={!selectedEpisodeRowKeys.length}>
+                        批量删除
+                      </Button>
+                    </Popconfirm>
+                  ) : null}
                 </div>
               </div>
               <Table
@@ -903,7 +958,6 @@ export default function DramasPage() {
                 style={{ width: '100%', minWidth: '100%' }}
                 rowKey="id"
                 tableLayout="fixed"
-                scroll={{ x: 710 }}
                 loading={episodeLoading}
                 columns={episodeColumns}
                 dataSource={pagedEpisodes}
@@ -912,10 +966,6 @@ export default function DramasPage() {
                   selectedRowKeys: selectedEpisodeRowKeys,
                   onChange: setSelectedEpisodeRowKeys,
                 }}
-                onRow={(record) => ({
-                  onClick: () => setSelectedEpisodeId(record.id),
-                  className: record.id === selectedEpisode?.id ? 'episode-row-selected' : '',
-                })}
                 pagination={false}
               />
               <div className="drama-list-pagination">
@@ -928,43 +978,8 @@ export default function DramasPage() {
                   onChange={setEpisodeCurrentPage}
                 />
               </div>
-            </section>
-
-            <aside className="episode-detail-panel">
-              <div className="episode-detail-card">
-                <h3>快速操作</h3>
-                <div className="episode-quick-actions">
-                  <Button type="primary" icon={<PlayCircleOutlined />}>进入编辑短剧</Button>
-                  <Button icon={<UploadOutlined />} onClick={() => openEpisodeModal()}>管理视频和字幕</Button>
-                </div>
-              </div>
-              <div className="episode-detail-card">
-                <h3>剧集信息</h3>
-                <dl>
-                  <dt>剧集编号</dt>
-                  <dd>{selectedEpisode ? `E${String(selectedEpisode.episode_no).padStart(2, '0')}` : '-'}</dd>
-                  <dt>剧集名称</dt>
-                  <dd>{selectedEpisode?.title ?? '-'}</dd>
-                  <dt>时长</dt>
-                  <dd>{formatDuration(selectedEpisode?.duration)}</dd>
-                  <dt>创建时间</dt>
-                  <dd>{formatDateTime(selectedEpisode?.created_at)}</dd>
-                </dl>
-              </div>
-              <div className="episode-detail-card">
-                <h3>素材完整度</h3>
-                <strong className="episode-completeness">{episodeCompleteness(selectedEpisode)}%</strong>
-                <div className="episode-completeness-bar">
-                  <span style={{ width: `${episodeCompleteness(selectedEpisode)}%` }} />
-                </div>
-                <ul>
-                  <li><span>字幕</span><Tag color={hasSubtitle(selectedEpisode ?? {}) ? 'success' : 'warning'}>{hasSubtitle(selectedEpisode ?? {}) ? '已识别' : '待识别'}</Tag></li>
-                  <li><span>AI 分析</span><Tag color={analysisStatusMeta(selectedEpisode?.analyze_status).color}>{analysisStatusMeta(selectedEpisode?.analyze_status).label}</Tag></li>
-                  <li><span>高光点</span><Tag color={Number(selectedEpisode?.draft_highlight_count ?? 0) + Number(selectedEpisode?.published_highlight_count ?? 0) > 0 ? 'success' : 'default'}>{Number(selectedEpisode?.draft_highlight_count ?? 0) + Number(selectedEpisode?.published_highlight_count ?? 0)} 个</Tag></li>
-                </ul>
-              </div>
-            </aside>
-          </div>
+            </div>
+          </section>
         </section>
       ) : (
         <section className="content-management">
@@ -1186,44 +1201,32 @@ export default function DramasPage() {
             </div>
           </section>
 
-          <section className="upload-drama-card">
-            <h3>素材批量上传</h3>
-            <EpisodeBatchUploader
-              pairs={dramaBatchPairs}
-              onChange={setDramaBatchPairs}
-              disabled={submitting}
-            />
-          </section>
+          {!editingDrama ? (
+            <>
+              <section className="upload-drama-card">
+                <h3>素材批量上传</h3>
+                <EpisodeBatchUploader
+                  pairs={dramaBatchPairs}
+                  onChange={setDramaBatchPairs}
+                  disabled={submitting}
+                />
+              </section>
 
-          <section className="upload-drama-card">
-            <h3>AI 分析设置</h3>
-            <div className="upload-ai-settings">
-              <Form.Item>
-                <Form.Item name="auto_timeline" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="" unCheckedChildren="" />
-                </Form.Item>
-                <span>自动时间轴对齐</span>
-              </Form.Item>
-              <Form.Item>
-                <Form.Item name="auto_highlight" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="" unCheckedChildren="" />
-                </Form.Item>
-                <span>自动识别高光点</span>
-              </Form.Item>
-              <Form.Item>
-                <Form.Item name="generate_suggestion" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="" unCheckedChildren="" />
-                </Form.Item>
-                <span>生成互动策略建议</span>
-              </Form.Item>
-              <Form.Item>
-                <Form.Item name="analyze_after_upload" valuePropName="checked" noStyle>
-                  <Switch checkedChildren="" unCheckedChildren="" />
-                </Form.Item>
-                <span>上传后立即开始分析</span>
-              </Form.Item>
-            </div>
-          </section>
+              <section className="upload-drama-card">
+                <h3>AI 分析设置</h3>
+                <div className="upload-ai-settings">
+                  <Form.Item name="post_upload_action" noStyle>
+                    <Radio.Group className="analysis-mode-group upload-post-action-group">
+                      <Radio.Button value="none">不处理</Radio.Button>
+                      <Radio.Button value="subtitle">仅生成字幕</Radio.Button>
+                      <Radio.Button value="highlight">仅分析高光</Radio.Button>
+                      <Radio.Button value="full">全部生成</Radio.Button>
+                    </Radio.Group>
+                  </Form.Item>
+                </div>
+              </section>
+            </>
+          ) : null}
 
           <div className="upload-drama-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16 }}>
             {uploadProgress ? (
@@ -1280,15 +1283,6 @@ export default function DramasPage() {
                 disabled={episodeSubmitting}
                 startIndex={Math.max(0, ...episodes.map(e => Number(e.episode_no) || 0)) + 1}
               />
-
-              <div className="upload-ai-settings" style={{ marginTop: 24 }}>
-                <Form.Item>
-                  <Form.Item name="analyze_after_upload" valuePropName="checked" noStyle>
-                    <Switch checkedChildren="" unCheckedChildren="" />
-                  </Form.Item>
-                  <span>上传后立即开始分析</span>
-                </Form.Item>
-              </div>
             </section>
           ) : null}
 
@@ -1378,25 +1372,51 @@ function CategoryDropdown({ value = [], onChange, placeholder }) {
 }
 
 function TagInput({ value = [], onChange, placeholder }) {
+  const [draft, setDraft] = useState('');
+
+  const addItem = () => {
+    const nextItem = draft.trim();
+    if (!nextItem) {
+      return;
+    }
+    if (!value.includes(nextItem)) {
+      onChange?.([...value, nextItem]);
+    }
+    setDraft('');
+  };
+
   const removeItem = (item) => {
     onChange?.(value.filter((current) => current !== item));
   };
 
   return (
     <div className="tag-input-field">
-      {value.length ? (
-        value.map((item) => (
-          <span key={item}>
-            {item}
-            <button type="button" onClick={() => removeItem(item)}>
-              ×
-            </button>
-          </span>
-        ))
-      ) : (
-        <em>{placeholder}</em>
-      )}
-      <button className="tag-input-add" type="button">
+      {value.map((item) => (
+        <span key={item}>
+          {item}
+          <button type="button" onClick={() => removeItem(item)}>
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        className="tag-input-editor"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={addItem}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ',') {
+            event.preventDefault();
+            addItem();
+          }
+          if (event.key === 'Backspace' && !draft && value.length) {
+            event.preventDefault();
+            removeItem(value[value.length - 1]);
+          }
+        }}
+        placeholder={value.length ? '' : placeholder}
+      />
+      <button className="tag-input-add" type="button" onMouseDown={(event) => event.preventDefault()} onClick={addItem}>
         <PlusOutlined />
       </button>
     </div>

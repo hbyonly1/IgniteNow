@@ -370,7 +370,7 @@ Content-Type: multipart/form-data
 
 AI 高光识别只允许通过系统任务异步触发，不再提供同步 HTTP 分析接口。旧 `POST /api/episodes/{episode_id}/analyze` 已删除，管理后台和 uploader 都必须使用 `POST /api/system/jobs` 创建 `ai_analyze` 任务。
 
-AI 高光识别调用 LLM 进行识别，优先读取系统设置中的 LLM 配置，其次读取环境变量 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_TIMEOUT_SECONDS`、`LLM_USE_RESPONSE_FORMAT`。创建 `ai_analyze` 任务并成功入队后，后端会立即把对应 `episode.analyze_status` 置为 `processing`，让分析列表马上进入“分析中”。worker 执行时如果剧集已有 `subtitle_content` / `subtitle_url`，直接进行高光识别；如果没有字幕但视频是服务端本地可访问文件或 `/uploads/...` 视频，会先执行本地字幕识别并写回字幕，再继续 AI 高光识别；如果既没有字幕又不能进行本地字幕识别，任务标记为 `failed`。未配置 API Key、字幕识别失败、AI 调用失败或结果校验失败时，`job.error` 和 `episode.analyze_error` 中会记录失败原因；不存在降级到关键词规则的 fallback 路径。任务执行成功后会写入 `draft` 高光供审核发布。`use_response_format=false` 时不会向模型接口发送 `response_format`，用于兼容豆包等不支持 JSON response mode 的 OpenAI-compatible 接口。
+AI 高光识别调用 LLM 进行识别，优先读取系统设置中的 LLM 配置，其次读取环境变量 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_TIMEOUT_SECONDS`、`LLM_USE_RESPONSE_FORMAT`。创建 `ai_analyze` 任务并成功入队后，后端会立即把对应 `episode.analyze_status` 置为 `processing`，让分析列表马上进入“分析中”。worker 执行时如果剧集已有 `subtitle_content` / `subtitle_url`，直接进行高光识别；如果没有字幕但视频是服务端本地可访问文件或 `/uploads/...` 视频，默认会先执行本地字幕识别并写回字幕，再继续 AI 高光识别；如果 `payload.skip_subtitle_asr=true` 则跳过字幕识别，缺字幕会直接失败；如果既没有字幕又不能进行本地字幕识别，任务标记为 `failed`。未配置 API Key、字幕识别失败、AI 调用失败或结果校验失败时，`job.error` 和 `episode.analyze_error` 中会记录失败原因；不存在降级到关键词规则的 fallback 路径。任务执行成功后会写入 `draft` 高光供审核发布。`use_response_format=false` 时不会向模型接口发送 `response_format`，用于兼容豆包等不支持 JSON response mode 的 OpenAI-compatible 接口。
 
 ### `GET /api/analysis/queue`
 
@@ -465,7 +465,8 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
   "type": "ai_analyze",
   "payload": {
     "episode_id": 1,
-    "force_reanalyze": false
+    "force_reanalyze": false,
+    "skip_subtitle_asr": false
   }
 }
 ```
@@ -488,7 +489,9 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 - 创建任务只负责入队，不在请求线程内执行 AI 分析或字幕识别；创建 `ai_analyze` 成功后会立即把剧集 `analyze_status` 置为 `processing`。
 - `subtitle_asr` 只支持服务端本地可访问的视频文件路径或 `/uploads/...` 视频；worker 使用 `ffmpeg` 抽取 16kHz 单声道音频，再用 faster-whisper 转写，生成 SRT 并写入 `episode.subtitle_content`、`episode.subtitle_url`、`episode.subtitle_original_name`，同时把 `asset_status` 更新为 `ready`。
 - `subtitle_asr.payload.force=false` 时，如果剧集已有 `subtitle_content`，任务会直接成功并跳过覆盖；`force=true` 时会重新识别并覆盖字幕。
-- `ai_analyze` worker 执行时会先检查字幕；缺字幕时尝试复用本地字幕识别链路，成功后继续高光识别，失败时把原始失败原因写入 `job.error` 和 `episode.analyze_error`。后续还会处理重复分析、AI 调用失败、非法 JSON、非法高光类型和时间范围错误。
+- `ai_analyze.payload.force_reanalyze=true` 时会覆盖已有分析结果；`skip_subtitle_asr=true` 时只做高光分析，缺字幕会直接失败并提示先生成字幕。
+- `ai_analyze` worker 执行时会先检查字幕；缺字幕且 `skip_subtitle_asr=false` 时尝试复用本地字幕识别链路，成功后继续高光识别，失败时把原始失败原因写入 `job.error` 和 `episode.analyze_error`。后续还会处理重复分析、AI 调用失败、非法 JSON、非法高光类型和时间范围错误。
+- 管理后台“新建分析任务”三种模式对应：仅生成字幕 -> `subtitle_asr`；仅分析高光 -> `ai_analyze` + `skip_subtitle_asr=true`；全部生成 -> `ai_analyze` + `skip_subtitle_asr=false`。
 - Redis/RQ 不可用时返回 `503`，并在 `job` 中记录失败状态。
 - 当前仅实现 `subtitle_asr` 与 `ai_analyze`；其他任务类型返回 `400`。
 

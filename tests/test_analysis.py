@@ -148,6 +148,53 @@ def test_analysis_runs_subtitle_asr_before_highlight_analysis(
     assert highlight.button_text == "爽到了"
 
 
+def test_analysis_can_skip_subtitle_asr_when_highlight_only(
+    db_session: Session,
+    tmp_path,
+    monkeypatch,
+) -> None:
+    video_path = tmp_path / "episode.mp4"
+    video_path.write_bytes(b"fake video")
+    drama = Drama(title="Highlight Only")
+    episode = Episode(
+        drama=drama,
+        episode_no=1,
+        title="E001",
+        video_url=str(video_path),
+        subtitle_content="",
+        duration=10,
+        analyze_status="processing",
+    )
+    db_session.add_all([drama, episode])
+    db_session.flush()
+    job = Job(
+        type="ai_analyze",
+        status="pending",
+        progress=0,
+        payload_json=f'{{"episode_id": {episode.id}, "force_reanalyze": false, "skip_subtitle_asr": true}}',
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(episode)
+    db_session.refresh(job)
+
+    monkeypatch.setattr(tasks, "SessionLocal", lambda: _SessionProxy(db_session))
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("subtitle ASR should be skipped")
+
+    monkeypatch.setattr(tasks, "transcribe_episode_subtitles", fail_if_called)
+
+    with pytest.raises(ValueError, match="subtitle is required"):
+        tasks.run_ai_analyze_job(job.id)
+
+    db_session.refresh(job)
+    db_session.refresh(episode)
+    assert job.status == "failed"
+    assert episode.analyze_status == "failed"
+    assert episode.analyze_error == "subtitle is required; run subtitle ASR first"
+
+
 def test_analysis_creates_draft_highlights_without_status_from_ai(
     db_session: Session,
     monkeypatch,

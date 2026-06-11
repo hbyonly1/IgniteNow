@@ -1,5 +1,19 @@
 # 开发进度
 
+## 2026-06-12 内容管理上传后处理收口
+
+### 已完成
+- 内容管理“上传短剧”的 AI 分析设置从四个开关收口为一个互斥四选一控件：不处理、仅生成字幕、仅分析高光、全部生成。
+- 删除原先不生效的“自动时间轴对齐”“自动识别高光点”“生成互动策略建议”和“上传后立即开始分析”开关，避免用户误以为这些选项有独立后端逻辑。
+- 上传后处理逻辑复用现有系统任务：仅生成字幕提交 `subtitle_asr`；仅分析高光提交 `ai_analyze` 且 `skip_subtitle_asr=true`；全部生成提交 `ai_analyze` 且保留缺字幕自动 ASR 后继续分析。
+- AI 分析“新建分析任务”提交成功后不再自动跳转到任务详情页，改为关闭弹窗并刷新分析队列，避免刚入队时详情页数据未同步导致空白体验。
+
+### 已验证
+- `npm exec eslint .` 在 `frontend/admin_web` 下通过。
+- `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+- `npm exec eslint .` 在 `frontend/admin_web` 下再次通过，覆盖新建分析任务跳转逻辑调整。
+- 内置 Browser 插件当前返回 `Browser is not available: iab`，未能进行页面截图验证。
+
 ## 2026-06-11 AI 分析功能完善计划执行
 
 ### 已完成
@@ -45,6 +59,12 @@
 - 将本地字幕识别默认模型从 `small` 调整为最小的 `tiny`，优先降低首次模型下载体积和 CPU 识别耗时；需要更高准确率时仍可通过 `WHISPER_MODEL` 环境变量改回 `small` 或更大模型。
 - AI 分析任务升级为完整流水线：创建 `ai_analyze` 成功入队后立即把剧集状态置为 `processing`；worker 执行时如果缺字幕，会先调用本地字幕识别写回 SRT，再继续 LLM 高光识别，失败原因同步写入 `job.error` 与 `episode.analyze_error`。
 - AI 分析页批量分析、批量重试、一键分析全剧改为逐项提交并收集结果；前端失败提示直接弹出后端返回的原始错误，不再包装成“批量提交失败”等泛化文案，失败状态标签悬停可查看 `analyze_error` / `latest_job.error`。
+- 内容管理的“管理剧集”页收敛为“剧集素材管理”：移除右侧详情/素材完整度/发布状态混杂区域，改为全宽多选素材表格，提供视频字幕管理、批量字幕识别、批量分析和批量删除入口。
+- 内容管理短剧表单的“主演”字段确认复用后端 `drama.cast_tags` / 数据库 `cast_tags_json`，前端 `TagInput` 修复为可输入标签，支持回车、逗号、失焦添加和退格删除。
+- AI 分析列表单集失败状态在“失败”左侧增加圆圈感叹号提示，并保留悬停查看 `analyze_error` / `latest_job.error` 错误详情。
+- AI 分析“新建分析任务”弹窗删除不生效的草稿、伪配置和“可分析”筛选，改为按视频存在性多选剧集；无视频剧集置灰并标记“无视频”，分析方式收口为连体互斥三栏：仅生成字幕、仅分析高光、全部生成。
+- 后端 `ai_analyze` 任务新增 `payload.skip_subtitle_asr`：用于“仅分析高光”模式，缺字幕时不再自动 ASR，而是直接失败并提示先生成字幕；“全部生成”继续保留缺字幕自动识别后分析。
+- 高光审核时间线补齐 `suspense/悬念` 独立轨道，不再把悬念高光归入 `satisfying/爆点` 轨道。
 
 ### 已验证
 - `python -m pytest tests/test_subtitle_asr.py tests/test_jobs.py --basetemp .codex-pytest-tmp` 覆盖字幕识别服务写回 SRT、已有字幕跳过和 `subtitle_asr` 任务创建。

@@ -23,6 +23,7 @@ def run_ai_analyze_job(job_id: int) -> None:
         if not isinstance(episode_id, int):
             raise ValueError("payload.episode_id is required")
         force_reanalyze = bool(payload.get("force_reanalyze", False))
+        skip_subtitle_asr = bool(payload.get("skip_subtitle_asr", False))
 
         episode = db.get(Episode, episode_id)
         if not episode:
@@ -30,6 +31,13 @@ def run_ai_analyze_job(job_id: int) -> None:
 
         update_job_progress(db, job, 20, "episode loaded", {"episode_id": episode_id})
         if not (episode.subtitle_content or episode.subtitle_url):
+            if skip_subtitle_asr:
+                message = "subtitle is required; run subtitle ASR first"
+                update_job_progress(db, job, 35, "subtitle missing, subtitle ASR skipped", {"episode_id": episode_id})
+                episode.analyze_status = "failed"
+                episode.analyze_error = message
+                db.commit()
+                raise ValueError(message)
             update_job_progress(db, job, 35, "subtitle missing, subtitle ASR started", {"episode_id": episode_id})
             try:
                 asr_result = transcribe_episode_subtitles(db, episode, force=False)

@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
   Button,
-  Checkbox,
   Empty,
   Input,
   InputNumber,
@@ -26,11 +25,11 @@ import {
   CloseCircleOutlined,
   CloseOutlined,
   DownOutlined,
+  ExclamationCircleOutlined,
   FileSearchOutlined,
   PlusOutlined,
   ReloadOutlined,
   RightOutlined,
-  RotateRightOutlined,
   SaveOutlined,
   SearchOutlined,
   SendOutlined,
@@ -215,7 +214,6 @@ export default function AnalyzePage() {
 }
 
 function AnalyzeQueue() {
-  const navigate = useNavigate();
   const [queueItems, setQueueItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -224,10 +222,11 @@ function AnalyzeQueue() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
-  const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
+  const [selectedTaskEpisodeIds, setSelectedTaskEpisodeIds] = useState([]);
   const [assetQuery, setAssetQuery] = useState('');
   const [assetDramaFilter, setAssetDramaFilter] = useState('all');
-  const [onlyReadyAssets, setOnlyReadyAssets] = useState(true);
+  const [analysisMode, setAnalysisMode] = useState('full');
+  const [forceReanalyze, setForceReanalyze] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [reviewEpisode, setReviewEpisode] = useState(null);
   const [subtitleEpisode, setSubtitleEpisode] = useState(null);
@@ -238,7 +237,6 @@ function AnalyzeQueue() {
       const response = await apiClient.get('/api/analysis/queue', { params: { limit: 500 } });
       const nextItems = response.data.data ?? [];
       setQueueItems(nextItems);
-      setSelectedEpisodeId((current) => current ?? nextItems.find(hasSubtitle)?.id ?? nextItems[0]?.id ?? null);
     } catch (error) {
       message.error(apiErrorMessage(error, 'AI 分析任务加载失败'));
     } finally {
@@ -331,11 +329,6 @@ function AnalyzeQueue() {
     return { processing, pending, highlights, confidence };
   }, [queueItems]);
 
-  const selectedEpisode = useMemo(
-    () => queueItems.find((episode) => episode.id === selectedEpisodeId) ?? queueItems[0] ?? null,
-    [queueItems, selectedEpisodeId],
-  );
-
   const pageSize = 10;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const effectivePage = Math.min(currentPage, totalPages);
@@ -348,19 +341,12 @@ function AnalyzeQueue() {
   const assetRows = useMemo(() => {
     const keyword = assetQuery.trim().toLowerCase();
     return queueItems
-      .map((episode) => {
-        const subtitleReady = Boolean(episode.subtitle_ready ?? hasSubtitle(episode));
-        return {
-          ...episode,
-          subtitle_ready: subtitleReady,
-          asset_completion: subtitleReady ? 96 : 62,
-        };
-      })
+      .map((episode) => ({
+        ...episode,
+        has_video: Boolean(episode.video_url),
+      }))
       .filter((episode) => {
         if (assetDramaFilter !== 'all' && episode.drama_id !== assetDramaFilter) {
-          return false;
-        }
-        if (onlyReadyAssets && !episode.subtitle_ready) {
           return false;
         }
         if (keyword && !`${episode.drama_title} ${episode.title}`.toLowerCase().includes(keyword)) {
@@ -368,33 +354,90 @@ function AnalyzeQueue() {
         }
         return true;
       })
-      .sort((a, b) => Number(b.subtitle_ready) - Number(a.subtitle_ready) || a.episode_no - b.episode_no);
-  }, [assetDramaFilter, assetQuery, queueItems, onlyReadyAssets]);
+      .sort((a, b) => Number(b.has_video) - Number(a.has_video) || a.episode_no - b.episode_no);
+  }, [assetDramaFilter, assetQuery, queueItems]);
+
+  const selectedTaskEpisodes = useMemo(() => {
+    const selectedIds = new Set(selectedTaskEpisodeIds);
+    return assetRows.filter((episode) => selectedIds.has(episode.id) && episode.has_video);
+  }, [assetRows, selectedTaskEpisodeIds]);
+  const canForceReanalyze = selectedTaskEpisodes.some((episode) => (
+    analysisMode === 'subtitle'
+      ? hasSubtitle(episode)
+      : ['failed', 'success'].includes(episode.analyze_status)
+  ));
+  const effectiveForceReanalyze = canForceReanalyze && forceReanalyze;
+
+  const assetColumns = [
+    {
+      title: '内容资产',
+      key: 'asset',
+      render: (_, episode) => (
+        <span className={`analysis-asset-item${episode.has_video ? '' : ' no-video'}`}>
+          <span className="analysis-cover">
+            {episode.cover_url ? <img src={episode.cover_url} alt="" loading="lazy" /> : <span>{coverText(episode.drama_title)}</span>}
+          </span>
+          <span className="analysis-asset-main">
+            <strong>{episode.drama_title}</strong>
+            <em>第 {episode.episode_no} 集</em>
+          </span>
+        </span>
+      ),
+    },
+    {
+      title: '状态',
+      key: 'asset_status',
+      width: 92,
+      align: 'right',
+      render: (_, episode) => (
+        <span className="analysis-asset-state">{episode.has_video ? '' : '无视频'}</span>
+      ),
+    },
+  ];
 
   const submitAnalysis = async () => {
-    if (!selectedEpisode) {
+    if (!selectedTaskEpisodes.length) {
       message.warning('请选择内容资产');
-      return;
-    }
-    if (!hasSubtitle(selectedEpisode)) {
-      message.warning('请选择已上传字幕的内容资产');
       return;
     }
     setSubmitting(true);
     try {
-      const response = await apiClient.post('/api/system/jobs', {
-        type: 'ai_analyze',
-        payload: { episode_id: selectedEpisode.id, force_reanalyze: false },
-      });
-      message.success('分析任务已提交');
+      const jobType = analysisMode === 'subtitle' ? 'subtitle_asr' : 'ai_analyze';
+      const results = await Promise.allSettled(selectedTaskEpisodes.map((episode) => {
+        const payload = analysisMode === 'subtitle'
+          ? { episode_id: episode.id, force: effectiveForceReanalyze }
+          : {
+            episode_id: episode.id,
+            force_reanalyze: effectiveForceReanalyze,
+            skip_subtitle_asr: analysisMode === 'highlight',
+          };
+        return apiClient.post('/api/system/jobs', { type: jobType, payload });
+      }));
+      const successResults = results.filter((result) => result.status === 'fulfilled');
+      if (successResults.length) {
+        message.success(`已提交 ${successResults.length} 个任务`);
+      }
+      const errorMessage = settledErrorMessage(results);
+      if (errorMessage) {
+        message.error(errorMessage);
+      }
       setTaskModalOpen(false);
       await loadData();
-      navigate(`/workspace/analyze/jobs/${response.data.data.id}`);
     } catch (error) {
       notifyApiError(error);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const openAnalysisTaskModal = () => {
+    setAssetQuery('');
+    setAssetDramaFilter('all');
+    setAnalysisMode('full');
+    const firstVideoEpisode = queueItems.find((episode) => episode.video_url);
+    setSelectedTaskEpisodeIds(firstVideoEpisode ? [firstVideoEpisode.id] : []);
+    setForceReanalyze(false);
+    setTaskModalOpen(true);
   };
 
   const submitBatchRetry = async () => {
@@ -585,9 +628,15 @@ function AnalyzeQueue() {
         } else {
           const meta = stageMeta[record.analyze_status] ?? stageMeta.pending;
           const failureReason = record.analyze_error || record.latest_job?.error;
-          const tag = <Tag className="analysis-stage-tag" color={meta.color}>{meta.label}</Tag>;
-          return record.analyze_status === 'failed' && failureReason ? (
-            <Tooltip title={failureReason}>{tag}</Tooltip>
+          const isFailed = record.analyze_status === 'failed';
+          const tag = (
+            <Tag className={`analysis-stage-tag${isFailed ? ' failed' : ''}`} color={meta.color}>
+              {isFailed ? <ExclamationCircleOutlined /> : null}
+              <span>{meta.label}</span>
+            </Tag>
+          );
+          return isFailed ? (
+            <Tooltip title={failureReason || '暂无错误详情'}>{tag}</Tooltip>
           ) : tag;
         }
       },
@@ -619,7 +668,7 @@ function AnalyzeQueue() {
               disabled={record.pending_episodes === 0 && record.failed_episodes === 0}
               onClick={(e) => { e.stopPropagation(); submitDramaAnalysis(record); }}
             >
-              一键分析全剧
+              生成该剧字幕和高光
             </Button>
           );
         } else {
@@ -638,7 +687,7 @@ function AnalyzeQueue() {
                 className="analysis-detail-action"
                 onClick={() => setReviewEpisode(record)}
               >
-                高光审核
+                高光编辑
               </Button>
               <Button
                 size="small"
@@ -674,7 +723,7 @@ function AnalyzeQueue() {
               setCurrentPage(1);
             }}
           />
-          <Button type="primary" className="content-upload-action" icon={<FileSearchOutlined />} onClick={() => setTaskModalOpen(true)}>
+          <Button type="primary" className="content-upload-action" icon={<FileSearchOutlined />} onClick={openAnalysisTaskModal}>
             新建分析任务
           </Button>
         </div>
@@ -714,7 +763,7 @@ function AnalyzeQueue() {
               disabled={!hasSelectedRows}
               onClick={submitBatchAnalysis}
             >
-              批量分析
+              识别字幕与高光
             </Button>
             <Button
               danger
@@ -723,17 +772,19 @@ function AnalyzeQueue() {
               disabled={!hasSelectedRows}
               onClick={cancelBatchAnalysis}
             >
-              批量取消
+              取消
             </Button>
             <Button
               className="analysis-bulk-action"
-              icon={<RotateRightOutlined />}
+              icon={<ReloadOutlined />}
               disabled={!hasSelectedRows}
               onClick={submitBatchRetry}
             >
-              批量重试
+              重试
             </Button>
-            <Button className="analysis-reload-action" icon={<ReloadOutlined />} onClick={loadData} />
+            <Button className="analysis-reload-action" onClick={loadData}>
+              刷新
+            </Button>
           </div>
         </div>
 
@@ -807,58 +858,62 @@ function AnalyzeQueue() {
               <Select
                 value={assetDramaFilter}
                 options={[{ value: 'all', label: '全部短剧' }, ...dramas.map((drama) => ({ value: drama.id, label: drama.title }))]}
-                onChange={setAssetDramaFilter}
+                onChange={(value) => {
+                  setAssetDramaFilter(value);
+                  setForceReanalyze(false);
+                }}
               />
-              <Checkbox checked={onlyReadyAssets} onChange={(event) => setOnlyReadyAssets(event.target.checked)}>
-                只看可分析
-              </Checkbox>
             </div>
             {assetRows.length ? (
-              <Radio.Group className="analysis-asset-list" value={selectedEpisode?.id} onChange={(event) => setSelectedEpisodeId(event.target.value)}>
-                {assetRows.map((episode) => (
-                  <Radio key={episode.id} value={episode.id} disabled={!episode.subtitle_ready}>
-                    <span className="analysis-asset-item">
-                      <span className="analysis-cover">
-                        {episode.cover_url ? <img src={episode.cover_url} alt="" loading="lazy" /> : <span>{coverText(episode.drama_title)}</span>}
-                      </span>
-                      <span className="analysis-asset-main">
-                        <strong>{episode.drama_title}</strong>
-                        <em>第 {episode.episode_no} 集 · {episode.title || '未命名剧集'}</em>
-                      </span>
-                      <span>{episode.asset_completion}%</span>
-                      <Tag color={episode.subtitle_ready ? 'success' : 'warning'}>{episode.subtitle_ready ? '可分析' : '待补充'}</Tag>
-                    </span>
-                  </Radio>
-                ))}
-              </Radio.Group>
+              <Table
+                className="analysis-asset-list"
+                rowKey="id"
+                tableLayout="fixed"
+                columns={assetColumns}
+                dataSource={assetRows}
+                pagination={false}
+                size="small"
+                rowClassName={(episode) => (episode.has_video ? '' : 'analysis-asset-row-disabled')}
+                rowSelection={{
+                  selectedRowKeys: selectedTaskEpisodeIds,
+                  getCheckboxProps: (episode) => ({ disabled: !episode.has_video }),
+                  onChange: (keys) => {
+                    setSelectedTaskEpisodeIds(keys);
+                    setForceReanalyze(false);
+                  },
+                }}
+              />
             ) : (
-              <Empty className="analysis-asset-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无可分析素材，请先在内容管理中上传字幕" />
+              <Empty className="analysis-asset-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无内容资产" />
             )}
           </section>
           <section className="analysis-task-card">
-            <h3>分析配置</h3>
-            <div className="analysis-config-checks">
-              <Checkbox defaultChecked>字幕解析</Checkbox>
-              <Checkbox defaultChecked>时间轴对齐</Checkbox>
-              <Checkbox defaultChecked>剧情分段</Checkbox>
-              <Checkbox defaultChecked>高光识别</Checkbox>
-              <Checkbox defaultChecked>互动建议生成</Checkbox>
-            </div>
+            <h3>分析方式</h3>
+            <Radio.Group
+              className="analysis-mode-group analysis-task-mode-group"
+              value={analysisMode}
+              optionType="button"
+              buttonStyle="solid"
+              onChange={(event) => setAnalysisMode(event.target.value)}
+            >
+              <Radio.Button value="subtitle">仅生成字幕</Radio.Button>
+              <Radio.Button value="highlight">仅分析高光</Radio.Button>
+              <Radio.Button value="full">全部生成</Radio.Button>
+            </Radio.Group>
             <div className="analysis-config-switch">
-              <span>人工复核</span>
-              <Switch defaultChecked />
-            </div>
-            <div className="analysis-config-switch">
-              <span>结果回写</span>
-              <Switch defaultChecked />
+              <span>重新分析并覆盖已有结果</span>
+              <Switch
+                checked={effectiveForceReanalyze}
+                disabled={!canForceReanalyze}
+                onChange={setForceReanalyze}
+              />
             </div>
           </section>
         </div>
         <div className="upload-drama-footer analysis-task-footer">
-          <Button>保存为草稿</Button>
           <Button onClick={() => setTaskModalOpen(false)}>取消</Button>
           <Button type="primary" loading={submitting} onClick={submitAnalysis}>
-            提交分析
+            提交任务
           </Button>
         </div>
       </Modal>
@@ -1004,6 +1059,7 @@ function SubtitleAsrModal({ episode, open, onClose, onUpdated }) {
       title={null}
       open={open}
       onCancel={onClose}
+      closable={false}
       width={920}
       destroyOnHidden
       footer={null}
@@ -1869,7 +1925,7 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
                   onChange: setSelectedHighlightKeys,
                   columnWidth: 38,
                 }}
-                scroll={{ y: '100%' }}
+                scroll={{ y: 300 }}
                 onRow={(record) => ({ onClick: () => selectHighlight(record) })}
                 rowClassName={(record) => (record.id === selectedId ? 'active' : '')}
                 columns={[
