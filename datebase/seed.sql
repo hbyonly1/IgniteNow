@@ -67,11 +67,11 @@ ON CONFLICT(id) DO UPDATE SET
 
 INSERT INTO interaction_template (highlight_type, button_text, effect, position, duration_ms)
 VALUES
-('conflict', '替她反击', 'anger_bar', 'bottom', 4000),
-('reversal', '反转了', 'screen_flash', 'bottom', 4000),
-('sweet', '磕到了', 'heart_rain', 'right', 4000),
-('satisfying', '爽', 'boom_effect', 'bottom', 4000),
-('suspense', '快更', 'countdown', 'bottom', 4000)
+('conflict', '替她反击', 'angry', 'bottom', 4000),
+('reversal', '反转了', 'shocked', 'bottom', 4000),
+('sweet', '磕到了', 'sweet', 'right', 4000),
+('satisfying', '爽', 'satisfied', 'bottom', 4000),
+('suspense', '快更', 'tense', 'bottom', 4000)
 ON CONFLICT(highlight_type) DO UPDATE SET
   button_text = excluded.button_text,
   effect = excluded.effect,

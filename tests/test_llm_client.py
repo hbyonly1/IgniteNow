@@ -25,7 +25,7 @@ class _FakeResponse:
                                         "trigger_score": 0.85,
                                         "reason": "测试",
                                         "button_text": "爽了",
-                                        "effect": "boom_effect",
+                                        "effect": "satisfied",
                                     }
                                 ]
                             },

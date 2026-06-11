@@ -21,7 +21,28 @@ EXPECTED_EPISODES = [
 ]
 
 HIGHLIGHT_TYPES = {"conflict", "reversal", "sweet", "satisfying", "suspense"}
-EFFECTS = {"anger_bar", "screen_flash", "heart_rain", "boom_effect", "countdown"}
+EFFECTS = {
+    "shocked",
+    "angry",
+    "sweet",
+    "tense",
+    "surprised",
+    "curious",
+    "proud",
+    "satisfied",
+    "pity",
+    "determined",
+    "awkward",
+    "worried",
+    "expectant",
+    "romantic",
+    "flirtatious",
+    "helpless",
+    "playful",
+    "serious",
+    "shy",
+    "indifferent",
+}
 REVIEW_ONLY_FIELDS = {"reason", "confidence", "status"}
 
 

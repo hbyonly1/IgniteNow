@@ -3,31 +3,18 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
-// The 20 supported emotion names — must match filenames in assets/2D_assets/2D_more/.
-const _kValidEmotions = {
+// The 20 supported effect keys must match filenames in assets/2D_assets/2D_more/.
+const _kValidEffects = {
   'shocked', 'angry', 'sweet', 'tense', 'surprised', 'curious',
   'proud', 'satisfied', 'pity', 'determined', 'awkward', 'worried',
   'expectant', 'romantic', 'flirtatious', 'helpless', 'playful',
   'serious', 'shy', 'indifferent',
 };
 
-// Fallback: map legacy Chinese emotion labels to the nearest English key.
-const _kChineseToEmotion = {
-  '震惊': 'shocked',     '惊讶': 'surprised',   '惊喜': 'surprised',
-  '愤怒': 'angry',       '冷漠': 'indifferent',  '委屈': 'pity',
-  '甜蜜': 'sweet',       '温馨': 'sweet',        '感激': 'sweet',
-  '暧昧': 'flirtatious', '挑逗': 'flirtatious',  '调皮': 'playful',
-  '好奇': 'curious',     '期待': 'expectant',    '担忧': 'worried',
-  '悬念': 'tense',       '紧张': 'tense',        '尴尬': 'awkward',
-  '得意': 'proud',       '爽快': 'satisfied',    '满足': 'satisfied',
-  '坚定': 'determined',  '严肃': 'serious',      '害羞': 'shy',
-  '幽默': 'playful',     '无奈': 'helpless',     '浪漫': 'romantic',
-};
-
-String _resolveEmotion(String raw) {
+String _resolveEffect(String raw) {
   final lower = raw.toLowerCase().trim();
-  if (_kValidEmotions.contains(lower)) return lower;
-  return _kChineseToEmotion[raw.trim()] ?? 'surprised';
+  if (_kValidEffects.contains(lower)) return lower;
+  return 'surprised';
 }
 
 const _kGifSize = 220.0;
@@ -39,16 +26,15 @@ class EffectLayer extends StatefulWidget {
   const EffectLayer({
     super.key,
     required this.effectKey,
-    required this.emotion,
+    required this.effect,
     required this.videoAspectRatio,
     this.onTap,
   });
 
   final int effectKey;
 
-  /// Highlight emotion string — one of the 20 English keys or a Chinese label
-  /// (mapped automatically to the nearest English key).
-  final String emotion;
+  /// Highlight effect key, one of the 20 App asset names.
+  final String effect;
 
   final double videoAspectRatio;
 
@@ -97,7 +83,7 @@ class _EffectLayerState extends State<EffectLayer> {
     _holdTimer?.cancel();
     _fadeTimer?.cancel();
 
-    final name = _resolveEmotion(widget.emotion);
+    final name = _resolveEffect(widget.effect);
     setState(() {
       _showing = true;
       _opacity = 1.0;

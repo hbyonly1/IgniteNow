@@ -8,13 +8,13 @@ from ..schemas import EFFECTS, HIGHLIGHT_STATUSES, HIGHLIGHT_TYPES, HighlightCre
 
 def default_template(highlight_type: str) -> tuple[str, str]:
     templates = {
-        "conflict": ("替她反击", "anger_bar"),
-        "reversal": ("反转了", "screen_flash"),
-        "sweet": ("磕到了", "heart_rain"),
-        "satisfying": ("爽", "boom_effect"),
-        "suspense": ("快更", "countdown"),
+        "conflict": ("替她反击", "angry"),
+        "reversal": ("反转了", "shocked"),
+        "sweet": ("磕到了", "sweet"),
+        "satisfying": ("爽", "satisfied"),
+        "suspense": ("快更", "tense"),
     }
-    return templates.get(highlight_type, ("我有感觉", "screen_flash"))
+    return templates.get(highlight_type, ("我有感觉", "surprised"))
 
 
 def validate_highlight_payload(item: dict, episode: Optional[Episode] = None) -> None:
@@ -113,3 +113,9 @@ def assert_no_published_overlap(db: Session, episode_id: int, highlights: list[H
         )
         if overlaps:
             raise ValueError(f"highlight {highlight.id} overlaps published highlight {overlaps.id}")
+
+
+def assert_valid_effects(highlights: list[HighlightEvent]) -> None:
+    for highlight in highlights:
+        if highlight.effect not in EFFECTS:
+            raise ValueError(f"highlight {highlight.id} has illegal effect: {highlight.effect}")

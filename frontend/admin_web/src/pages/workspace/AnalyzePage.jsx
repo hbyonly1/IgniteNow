@@ -57,6 +57,41 @@ const highlightTypeMeta = {
 };
 const highlightTypeOptions = Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }));
 
+const effectMeta = {
+  shocked: '震惊',
+  angry: '愤怒',
+  sweet: '甜蜜',
+  tense: '紧张',
+  surprised: '惊喜',
+  curious: '好奇',
+  proud: '得意',
+  satisfied: '满足',
+  pity: '委屈',
+  determined: '坚定',
+  awkward: '尴尬',
+  worried: '担忧',
+  expectant: '期待',
+  romantic: '浪漫',
+  flirtatious: '暧昧',
+  helpless: '无奈',
+  playful: '调皮',
+  serious: '严肃',
+  shy: '害羞',
+  indifferent: '冷漠',
+};
+const effectOptions = Object.entries(effectMeta).map(([value, label]) => ({ value, label }));
+
+function effectForHighlightType(type) {
+  const defaults = {
+    conflict: 'angry',
+    reversal: 'shocked',
+    sweet: 'sweet',
+    satisfying: 'satisfied',
+    suspense: 'tense',
+  };
+  return defaults[type] ?? 'surprised';
+}
+
 const highlightStatusMeta = {
   draft: { label: '待审核', color: 'warning' },
   published: { label: '已通过', color: 'success' },
@@ -1244,6 +1279,8 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
     start_time: parseTimecode(nextDraft.start_time),
     end_time: parseTimecode(nextDraft.end_time),
     highlight_type: nextDraft.highlight_type,
+    emotion: nextDraft.emotion || emotionForHighlightType(nextDraft.highlight_type),
+    effect: nextDraft.effect || effectForHighlightType(nextDraft.highlight_type),
     reason: nextDraft.reason,
     confidence: Number(nextDraft.confidence ?? 0) / 100,
     status: nextDraft.status,
@@ -1273,7 +1310,7 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
           trigger_score: 0.5,
           reason: nextDraft.reason || '手动创建高光区间',
           button_text: '精彩片段',
-          effect: 'boom_effect',
+          effect: nextDraft.effect || effectForHighlightType(nextDraft.highlight_type),
           status: nextDraft.status,
         });
         const created = response.data.data;
@@ -1337,7 +1374,7 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
             trigger_score: 0.5,
             reason: item.reason || '手动创建高光区间',
             button_text: '精彩片段',
-            effect: 'boom_effect',
+            effect: item.effect || effectForHighlightType(item.highlight_type),
             status: item.status,
           });
         }
@@ -1487,12 +1524,12 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
       trigger_score: 0.5,
       reason: draft?.reason || '手动创建高光区间',
       button_text: '精彩片段',
-      effect: 'boom_effect',
+      effect: effectForHighlightType(nextType),
       status: draft?.status ?? 'draft',
     };
     const nextDraft = highlightToDraft(created);
     setHighlights((current) => [...current, created].sort((a, b) => a.start_time - b.start_time));
-    setDirtyDrafts((current) => ({ ...current, [created.id]: { ...nextDraft, emotion: created.emotion } }));
+    setDirtyDrafts((current) => ({ ...current, [created.id]: { ...nextDraft, emotion: created.emotion, effect: created.effect } }));
     setSelectedId(created.id);
     setDraft(nextDraft);
     if (videoRef.current) {
@@ -1539,10 +1576,11 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
       reason: selected.reason || '拆分高光区间',
       status: 'draft',
       emotion: selected.emotion || emotionForHighlightType(selected.highlight_type),
+      effect: selected.effect || effectForHighlightType(selected.highlight_type),
     };
     const rightDraft = highlightToDraft(right);
     setHighlights((current) => [...current.map((item) => (item.id === selected.id ? { ...item, end_time: splitTime } : item)), right].sort((a, b) => a.start_time - b.start_time));
-    setDirtyDrafts((current) => ({ ...current, [selected.id]: leftDraft, [right.id]: { ...rightDraft, emotion: right.emotion } }));
+    setDirtyDrafts((current) => ({ ...current, [selected.id]: leftDraft, [right.id]: { ...rightDraft, emotion: right.emotion, effect: right.effect } }));
     setSelectedId(right.id);
     setDraft(rightDraft);
   };
@@ -1728,7 +1766,20 @@ function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
                         className="upload-category-select"
                         value={draft.highlight_type}
                         options={highlightTypeOptions}
-                        onChange={(value) => updateDraft({ highlight_type: value })}
+                        onChange={(value) => updateDraft({
+                          highlight_type: value,
+                          emotion: emotionForHighlightType(value),
+                          effect: effectForHighlightType(value),
+                        })}
+                      />
+                    </label>
+                    <label>
+                      <span>触发特效</span>
+                      <Select
+                        className="upload-category-select"
+                        value={draft.effect}
+                        options={effectOptions}
+                        onChange={(value) => updateDraft({ effect: value })}
                       />
                     </label>
                     <label>
@@ -1859,6 +1910,7 @@ function highlightToDraft(highlight) {
     reason: highlight.reason ?? '',
     status: highlight.status,
     emotion: highlight.emotion ?? '',
+    effect: highlight.effect || effectForHighlightType(highlight.highlight_type),
   };
 }
 
@@ -1871,6 +1923,7 @@ function draftToHighlightFields(draft) {
     reason: draft.reason,
     status: draft.status,
     emotion: draft.emotion,
+    effect: draft.effect,
   };
 }
 

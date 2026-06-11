@@ -26,6 +26,7 @@ from ..services.auth_service import ADMIN_ROLE, UPLOADER_ROLE
 from ..services.highlight_service import (
     apply_highlight_update,
     assert_no_published_overlap,
+    assert_valid_effects,
     create_highlight,
 )
 from ..services.upload_service import probe_video_metadata, save_image_file, save_subtitle_file, save_video_file
@@ -400,6 +401,7 @@ def add_highlight(episode_id: int, payload: HighlightCreate, db: Session = Depen
         highlight = create_highlight(db, episode, payload)
         db.flush()
         if highlight.status == "published":
+            assert_valid_effects([highlight])
             assert_no_published_overlap(db, episode_id, [highlight])
         db.commit()
     except ValueError as exc:
@@ -417,6 +419,7 @@ def update_highlight(highlight_id: int, payload: HighlightUpdate, db: Session = 
     try:
         apply_highlight_update(highlight, payload, highlight.episode)
         if highlight.status == "published":
+            assert_valid_effects([highlight])
             assert_no_published_overlap(db, highlight.episode_id, [highlight])
         db.commit()
     except ValueError as exc:
@@ -451,6 +454,7 @@ def bulk_update_highlight_status(episode_id: int, payload: HighlightBulkStatusUp
         item.status = payload.status
     try:
         if payload.status == "published":
+            assert_valid_effects(highlights)
             assert_no_published_overlap(db, episode_id, highlights)
         db.commit()
     except ValueError as exc:
@@ -465,6 +469,7 @@ def publish_highlights(episode_id: int, db: Session = Depends(get_db)):
     for item in highlights:
         item.status = "published"
     try:
+        assert_valid_effects(highlights)
         assert_no_published_overlap(db, episode_id, highlights)
         db.commit()
     except ValueError as exc:

@@ -27,11 +27,11 @@ def seed_demo(db: Session = Depends(get_db)):
         )
         db.add(episode)
     for highlight_type, button_text, effect in [
-        ("conflict", "替她反击", "anger_bar"),
-        ("reversal", "反转了", "screen_flash"),
-        ("sweet", "磕到了", "heart_rain"),
-        ("satisfying", "爽", "boom_effect"),
-        ("suspense", "快更", "countdown"),
+        ("conflict", "替她反击", "angry"),
+        ("reversal", "反转了", "shocked"),
+        ("sweet", "磕到了", "sweet"),
+        ("satisfying", "爽", "satisfied"),
+        ("suspense", "快更", "tense"),
     ]:
         if not db.query(InteractionTemplate).filter(InteractionTemplate.highlight_type == highlight_type).first():
             db.add(InteractionTemplate(highlight_type=highlight_type, button_text=button_text, effect=effect))

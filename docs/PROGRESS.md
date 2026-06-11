@@ -38,6 +38,9 @@
 - 系统设置页新增 LLM 运行配置：支持保存启用状态、API Key、Base URL、模型和超时时间；后端 AI 分析任务优先读取 `system_setting.llm`，再回退到环境变量，API Key 不会通过读取接口明文回显。
 - LLM 请求体新增可配置 JSON 响应模式开关 `use_response_format`，默认关闭；系统设置页在 AI 识别 Prompt 上方提供开关，关闭时不再发送 `response_format={"type":"json_object"}`，兼容豆包 Seed 等不支持该参数的模型。
 - 修复发布任务失败状态处理：发布中心现在会读取发布单返回的 `status`、`failed_count`、`error` 和失败条目错误并直接提示业务失败原因；后端发布执行改为先校验高光时间段重叠，再把 `draft` 高光改为 `published`，避免失败发布单污染高光状态。
+- 高光特效字段完成跨端收口：后端、AI 服务、管理后台、种子数据和 App 播放端统一使用 Android 已有 20 个 2D 特效资源 key；旧 `anger_bar`、`screen_flash`、`heart_rain`、`boom_effect`、`countdown` 不再兼容。
+- 管理后台高光审核编辑区新增“触发特效”选择，新增、拆分、保存单条和保存全部都会显式提交 App effect key；发布后播放端接口仍只返回 `published` 高光，App 使用返回的 `effect` 直接触发本地 GIF/WAV 资源。
+- 修复 `mobile/lib/pages/player_page.dart` 中的 merge conflict，保留进入播放页生成 `play_session_id` 并随互动日志回传的逻辑。
 - 修复本地字幕识别模型缓存权限问题：Docker app/worker 显式设置 `HOME=/app`、`XDG_CACHE_HOME`、`HF_HOME` 和 `WHISPER_DOWNLOAD_ROOT` 到可写的 `backend/model_cache`，并让 `WhisperModel` 使用配置化下载目录，避免 faster-whisper 在 `HOME=/nonexistent` 环境下报权限错误。
 - 将本地字幕识别默认模型从 `small` 调整为最小的 `tiny`，优先降低首次模型下载体积和 CPU 识别耗时；需要更高准确率时仍可通过 `WHISPER_MODEL` 环境变量改回 `small` 或更大模型。
 - AI 分析任务升级为完整流水线：创建 `ai_analyze` 成功入队后立即把剧集状态置为 `processing`；worker 执行时如果缺字幕，会先调用本地字幕识别写回 SRT，再继续 LLM 高光识别，失败原因同步写入 `job.error` 与 `episode.analyze_error`。
@@ -56,6 +59,11 @@
 - `docker compose config` 通过，确认 app 与 worker 均注入可写模型缓存环境变量并挂载 `backend/model_cache`。
 - `PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache .venv312/bin/python -m compileall backend/app` 通过。
 - `LOG_DIR=backend/logs .venv312/bin/python -m pytest tests/test_analysis.py tests/test_jobs.py tests/test_analysis_queue.py --basetemp .codex-pytest-tmp-analysis-pipeline` 通过，覆盖任务入队置为分析中、缺字幕自动 ASR 后继续高光识别、失败原因写回和分析列表聚合。
+- `.venv312/bin/python -m pytest tests/test_analysis.py tests/test_jobs.py tests/test_player_api.py tests/test_publish.py tests/test_llm_client.py --basetemp .codex-pytest-tmp-effect` 通过，覆盖 App effect key 校验、旧 effect 发布失败回滚、播放端 published 高光 effect 下发和 LLM 输出归一。
+- `PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache .venv312/bin/python -m compileall backend/app ai_service` 通过。
+- `npm exec eslint .` 与 `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+- `git diff --check` 与 `git diff --cached --check` 通过；`mobile/lib/pages/player_page.dart` 的 merge conflict 已解决并标记为 resolved。
+- 当前环境未提供 `dart` / `flutter` 命令，无法执行 `dart format` 或 `flutter analyze`；已通过源码扫描确认移动端 conflict marker 与旧 effect 映射残留已清除。
 
 ## 2026-06-11 内容管理批量上传功能
 

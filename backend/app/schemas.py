@@ -7,7 +7,28 @@ from pydantic import BaseModel, ConfigDict, Field
 HIGHLIGHT_TYPES = {"conflict", "reversal", "sweet", "satisfying", "suspense"}
 HIGHLIGHT_STATUSES = {"draft", "published", "rejected", "archived"}
 ACTION_TYPES = {"impression", "click", "ignore"}
-EFFECTS = {"anger_bar", "screen_flash", "heart_rain", "boom_effect", "countdown"}
+EFFECTS = {
+    "shocked",
+    "angry",
+    "sweet",
+    "tense",
+    "surprised",
+    "curious",
+    "proud",
+    "satisfied",
+    "pity",
+    "determined",
+    "awkward",
+    "worried",
+    "expectant",
+    "romantic",
+    "flirtatious",
+    "helpless",
+    "playful",
+    "serious",
+    "shy",
+    "indifferent",
+}
 JOB_TYPES = {"ai_analyze", "subtitle_asr", "ocr_import"}
 JOB_STATUSES = {"pending", "running", "success", "failed", "canceled"}
 PUBLISH_CHANNELS = {"android"}

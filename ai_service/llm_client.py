@@ -9,7 +9,28 @@ import requests
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
-ALLOWED_EFFECTS = {"anger_bar", "screen_flash", "heart_rain", "boom_effect", "countdown"}
+ALLOWED_EFFECTS = {
+    "shocked",
+    "angry",
+    "sweet",
+    "tense",
+    "surprised",
+    "curious",
+    "proud",
+    "satisfied",
+    "pity",
+    "determined",
+    "awkward",
+    "worried",
+    "expectant",
+    "romantic",
+    "flirtatious",
+    "helpless",
+    "playful",
+    "serious",
+    "shy",
+    "indifferent",
+}
 ALLOWED_TYPES = {"conflict", "reversal", "sweet", "satisfying", "suspense"}
 
 
@@ -41,11 +62,11 @@ def _normalize_highlight(item: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"illegal highlight_type from LLM: {highlight_type}")
     if effect not in ALLOWED_EFFECTS:
         effect = {
-            "conflict": "anger_bar",
-            "reversal": "screen_flash",
-            "sweet": "heart_rain",
-            "satisfying": "boom_effect",
-            "suspense": "countdown",
+            "conflict": "angry",
+            "reversal": "shocked",
+            "sweet": "sweet",
+            "satisfying": "satisfied",
+            "suspense": "tense",
         }[highlight_type]
 
     start_time = _normalize_number(item.get("start_time"), -1)

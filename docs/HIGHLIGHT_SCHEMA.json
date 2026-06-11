@@ -35,7 +35,28 @@
           "button_text": { "type": "string", "minLength": 1 },
           "effect": {
             "type": "string",
-            "enum": ["anger_bar", "screen_flash", "heart_rain", "boom_effect", "countdown"]
+            "enum": [
+              "shocked",
+              "angry",
+              "sweet",
+              "tense",
+              "surprised",
+              "curious",
+              "proud",
+              "satisfied",
+              "pity",
+              "determined",
+              "awkward",
+              "worried",
+              "expectant",
+              "romantic",
+              "flirtatious",
+              "helpless",
+              "playful",
+              "serious",
+              "shy",
+              "indifferent"
+            ]
           }
         },
         "additionalProperties": false

@@ -93,7 +93,7 @@ def test_failed_publish_keeps_overlapping_drafts_unpublished(
         trigger_score=0.6,
         reason="overlaps published",
         button_text="冲突升级",
-        effect="anger_bar",
+        effect="angry",
         status="draft",
     )
     db_session.add(overlapping_draft)
@@ -117,6 +117,44 @@ def test_failed_publish_keeps_overlapping_drafts_unpublished(
     player_highlights = client.get(f"/api/player/episodes/{demo_episode.id}").json()["data"]["highlights"]
     assert len(player_highlights) == 1
     assert player_highlights[0]["button_text"] == "反转了"
+
+
+def test_failed_publish_keeps_legacy_effect_unpublished(
+    client: TestClient,
+    db_session: Session,
+    demo_episode: Episode,
+    admin_headers: dict[str, str],
+) -> None:
+    legacy_draft = HighlightEvent(
+        episode_id=demo_episode.id,
+        start_time=18,
+        end_time=20,
+        highlight_type="satisfying",
+        emotion="satisfied",
+        intensity=0.7,
+        confidence=0.8,
+        trigger_score=0.6,
+        reason="legacy effect",
+        button_text="爽到了",
+        effect="boom_effect",
+        status="draft",
+    )
+    db_session.add(legacy_draft)
+    db_session.commit()
+
+    response = client.post(
+        "/api/publish/jobs",
+        headers=admin_headers,
+        json={"episode_ids": [demo_episode.id], "channel": "android"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "failed"
+    assert "illegal effect" in data["error"]
+
+    db_session.refresh(legacy_draft)
+    assert legacy_draft.status == "draft"
 
 
 def test_publish_pending_items_and_recent_jobs(

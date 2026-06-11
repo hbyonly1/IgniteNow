@@ -130,7 +130,7 @@ def test_analysis_runs_subtitle_asr_before_highlight_analysis(
                     "trigger_score": 0.85,
                     "reason": content,
                     "button_text": "爽到了",
-                    "effect": "boom_effect",
+                    "effect": "satisfied",
                 }
             ]
         },
@@ -194,7 +194,7 @@ def test_analysis_creates_draft_highlights_without_status_from_ai(
                     "trigger_score": 0.85,
                     "reason": "测试高光",
                     "button_text": "反转了",
-                    "effect": "screen_flash",
+                    "effect": "shocked",
                 }
             ]
         },
@@ -224,7 +224,7 @@ def test_manual_highlight_rejects_time_after_episode_duration(
             "end_time": 40,
             "highlight_type": "suspense",
             "button_text": "快更",
-            "effect": "countdown",
+            "effect": "tense",
             "status": "draft",
         },
     )
@@ -247,6 +247,28 @@ def test_manual_highlight_rejects_illegal_effect(
             "highlight_type": "suspense",
             "button_text": "快更",
             "effect": "unknown",
+            "status": "draft",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "effect" in response.json()["detail"]
+
+
+def test_manual_highlight_rejects_legacy_effect(
+    client: TestClient,
+    demo_episode: Episode,
+    admin_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        f"/api/episodes/{demo_episode.id}/highlights",
+        headers=admin_headers,
+        json={
+            "start_time": 15,
+            "end_time": 18,
+            "highlight_type": "satisfying",
+            "button_text": "爽到了",
+            "effect": "boom_effect",
             "status": "draft",
         },
     )

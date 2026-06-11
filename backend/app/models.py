@@ -87,7 +87,7 @@ class HighlightEvent(Base):
     trigger_score: Mapped[float] = mapped_column(Float, default=0.5)
     reason: Mapped[str] = mapped_column(Text, default="")
     button_text: Mapped[str] = mapped_column(String(120), default="我有感觉")
-    effect: Mapped[str] = mapped_column(String(64), default="screen_flash")
+    effect: Mapped[str] = mapped_column(String(64), default="surprised")
     status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

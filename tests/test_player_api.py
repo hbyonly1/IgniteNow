@@ -12,6 +12,7 @@ def test_player_episode_only_returns_published_highlights(client: TestClient, de
     highlights = body["data"]["highlights"]
     assert len(highlights) == 1
     assert highlights[0]["button_text"] == "反转了"
+    assert highlights[0]["effect"] == "shocked"
     assert "reason" not in highlights[0]
     assert "confidence" not in highlights[0]
     assert "status" not in highlights[0]

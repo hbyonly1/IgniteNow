@@ -90,7 +90,7 @@ def demo_episode(db_session: Session) -> Episode:
                 trigger_score=0.7,
                 reason="review-only",
                 button_text="反转了",
-                effect="screen_flash",
+                effect="shocked",
                 status="published",
             ),
             HighlightEvent(
@@ -104,7 +104,7 @@ def demo_episode(db_session: Session) -> Episode:
                 trigger_score=0.6,
                 reason="draft-only",
                 button_text="磕到了",
-                effect="heart_rain",
+                effect="sweet",
                 status="draft",
             ),
             HighlightEvent(
@@ -118,7 +118,7 @@ def demo_episode(db_session: Session) -> Episode:
                 trigger_score=0.6,
                 reason="rejected-only",
                 button_text="替她反击",
-                effect="anger_bar",
+                effect="angry",
                 status="rejected",
             ),
         ]

@@ -15,7 +15,7 @@ from ..schemas import (
     PublishJobOut,
     PublishPendingItemOut,
 )
-from ..services.highlight_service import assert_no_published_overlap
+from ..services.highlight_service import assert_no_published_overlap, assert_valid_effects
 from .common import ok, require_admin
 
 router = APIRouter(prefix="/publish", dependencies=[Depends(require_admin)])
@@ -144,6 +144,7 @@ def _execute_publish_job(db: Session, job: PublishJob) -> None:
             continue
 
         try:
+            assert_valid_effects(highlights)
             assert_no_published_overlap(db, episode.id, highlights)
         except ValueError as exc:
             item.status = "failed"

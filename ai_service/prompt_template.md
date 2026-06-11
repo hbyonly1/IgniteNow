@@ -17,7 +17,7 @@
       "trigger_score": 0.82,
       "reason": "一句话说明为什么这里适合触发互动",
       "button_text": "替她反击",
-      "effect": "anger_bar"
+      "effect": "angry"
     }
   ]
 }
@@ -35,11 +35,26 @@
 
 允许的 `effect`：
 
-- `anger_bar`
-- `screen_flash`
-- `heart_rain`
-- `boom_effect`
-- `countdown`
+- `shocked`
+- `angry`
+- `sweet`
+- `tense`
+- `surprised`
+- `curious`
+- `proud`
+- `satisfied`
+- `pity`
+- `determined`
+- `awkward`
+- `worried`
+- `expectant`
+- `romantic`
+- `flirtatious`
+- `helpless`
+- `playful`
+- `serious`
+- `shy`
+- `indifferent`
 
 选择标准：
 

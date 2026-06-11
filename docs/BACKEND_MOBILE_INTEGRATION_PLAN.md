@@ -347,7 +347,7 @@ Android 不应调用后台接口，不应携带管理员 token。推荐保持以
       "intensity": 0.8,
       "trigger_score": 0.9,
       "button_text": "太反转了",
-      "effect": "screen_flash"
+      "effect": "shocked"
     }
   ]
 }

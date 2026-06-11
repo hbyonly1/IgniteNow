@@ -38,6 +38,7 @@
 - 工作台不再使用统一外层 Header，各业务页面自行提供页面内标题和操作区，保证内容管理、AI 分析、发布中心、系统设置等页面视觉结构一致。
 - 发布中心真实化第一阶段新增 `publish_job` 与 `publish_job_item` 最小发布模型；`channel` 只允许 `android`，立即发布时将剧集 `draft` 高光改为 `published` 并写入发布单状态，未来时间只创建 `pending` 发布单。
 - Android 播放端可见性继续只依赖 `drama.status=active` 与 `highlight_event.status=published`，不让播放端接口依赖发布单 join，避免破坏现有移动端字段隔离和播放链路稳定性。
+- 高光 `effect` 字段统一改为 Android App 端 2D 特效资源 key，以 `mobile/assets/2D_assets/2D_more/` 已有 20 个资源名为准：`shocked`、`angry`、`sweet`、`tense`、`surprised`、`curious`、`proud`、`satisfied`、`pity`、`determined`、`awkward`、`worried`、`expectant`、`romantic`、`flirtatious`、`helpless`、`playful`、`serious`、`shy`、`indifferent`。旧的 `anger_bar`、`screen_flash`、`heart_rain`、`boom_effect`、`countdown` 不再兼容，后端校验、AI 输出、后台编辑和播放端触发均以 App 资源 key 为准。
 
 ## 2026-06-10 系统设置持久化范围
 

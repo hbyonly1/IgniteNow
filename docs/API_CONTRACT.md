@@ -25,6 +25,7 @@ Authorization: Bearer <access_token>
 - `episode.analyze_status`: `pending`、`processing`、`success`、`failed`
 - `highlight_event.status`: `draft`、`published`、`rejected`、`archived`
 - `highlight_type`: `conflict`、`reversal`、`sweet`、`satisfying`、`suspense`
+- `highlight_event.effect`: 使用 App 端 `assets/2D_assets/2D_more/` 下的资源 key，只允许 `shocked`、`angry`、`sweet`、`tense`、`surprised`、`curious`、`proud`、`satisfied`、`pity`、`determined`、`awkward`、`worried`、`expectant`、`romantic`、`flirtatious`、`helpless`、`playful`、`serious`、`shy`、`indifferent`；旧的 `anger_bar`、`screen_flash`、`heart_rain`、`boom_effect`、`countdown` 不再兼容。
 - `action_type`: `impression`、`click`、`ignore`
 - `episode.asset_status`: `draft`、`ready`、`incomplete`
 - 时间单位：秒，字段类型为 number/float
@@ -646,7 +647,7 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
   "trigger_score": 0.78,
   "reason": "剧情发生反转",
   "button_text": "反转了",
-  "effect": "screen_flash",
+  "effect": "shocked",
   "status": "draft"
 }
 ```
@@ -942,7 +943,7 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
         "intensity": 0.86,
         "trigger_score": 0.78,
         "button_text": "反转了",
-        "effect": "screen_flash"
+        "effect": "shocked"
       }
     ]
   }
