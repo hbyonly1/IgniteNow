@@ -26,11 +26,14 @@ def test_system_settings_defaults_and_save(
     client: TestClient,
     db_session: Session,
     admin_headers: dict[str, str],
+    monkeypatch,
 ) -> None:
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
     get_response = client.get("/api/system/settings", headers=admin_headers)
     assert get_response.status_code == 200
     data = get_response.json()["data"]
     assert data["settings"]["llm"]["enabled"] is True
+    assert data["settings"]["llm"]["use_response_format"] is False
     assert data["settings"]["llm"]["api_key_configured"] is False
 
     save_response = client.put(
@@ -43,6 +46,7 @@ def test_system_settings_defaults_and_save(
                 "base_url": "https://api.example.com/v1",
                 "model": "test-model",
                 "timeout_seconds": 45,
+                "use_response_format": True,
             }
         },
     )
@@ -51,6 +55,7 @@ def test_system_settings_defaults_and_save(
     saved = save_response.json()["data"]
     assert saved["settings"]["llm"]["base_url"] == "https://api.example.com/v1"
     assert saved["settings"]["llm"]["model"] == "test-model"
+    assert saved["settings"]["llm"]["use_response_format"] is True
     assert saved["settings"]["llm"]["api_key_configured"] is True
     assert "api_key" not in saved["settings"]["llm"]
     assert saved["updated_by_user_id"] is not None
@@ -59,6 +64,7 @@ def test_system_settings_defaults_and_save(
     assert len(rows) == 1
     stored = json.loads(rows[0].value_json)
     assert stored["api_key"] == "sk-test"
+    assert stored["use_response_format"] is True
 
 
 def test_system_settings_reject_unwired_options(client: TestClient, admin_headers: dict[str, str]) -> None:

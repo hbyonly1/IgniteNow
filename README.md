@@ -78,6 +78,9 @@ LLM_API_KEY=
 LLM_BASE_URL=https://api.openai.com/v1
 # LLM 模型名称。
 LLM_MODEL=gpt-4o-mini
+# 是否向 Chat Completions 请求体发送 response_format={"type":"json_object"}。
+# 豆包等不支持该参数的模型应保持 false。
+LLM_USE_RESPONSE_FORMAT=false
 
 # 本地字幕识别模型，subtitle_asr 任务使用 faster-whisper。
 WHISPER_MODEL=small

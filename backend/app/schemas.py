@@ -400,6 +400,7 @@ class LLMSettingsUpdate(BaseModel):
     base_url: str = Field(default="", max_length=500)
     model: str = Field(default="", max_length=120)
     timeout_seconds: float = Field(default=90, ge=5, le=300)
+    use_response_format: bool = False
 
 
 class SystemSettingsUpdate(BaseModel):

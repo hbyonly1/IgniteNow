@@ -13,6 +13,7 @@ DEFAULT_LLM_SETTINGS = {
     "base_url": os.getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
     "model": os.getenv("LLM_MODEL", "gpt-4o-mini"),
     "timeout_seconds": float(os.getenv("LLM_TIMEOUT_SECONDS", "90")),
+    "use_response_format": os.getenv("LLM_USE_RESPONSE_FORMAT", "false").lower() in {"1", "true", "yes"},
 }
 
 DEFAULT_SYSTEM_SETTINGS = {
@@ -69,4 +70,5 @@ def load_llm_config(db: Session) -> dict[str, Any]:
         "base_url": raw.get("base_url") or os.getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
         "model": raw.get("model") or os.getenv("LLM_MODEL", "gpt-4o-mini"),
         "timeout_seconds": raw.get("timeout_seconds") or os.getenv("LLM_TIMEOUT_SECONDS", "90"),
+        "use_response_format": bool(raw.get("use_response_format", False)),
     }

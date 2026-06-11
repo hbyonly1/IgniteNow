@@ -5013,6 +5013,29 @@
   width: 100%;
 }
 
+.settings-grid .settings-api-key-item {
+  min-height: 64px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.settings-grid .settings-api-key-item .ant-form-item-control {
+  width: 320px;
+}
+
+.settings-grid .settings-api-key-item .ant-form-item-control-input {
+  min-height: 34px;
+}
+
+.settings-grid .settings-api-key-item .ant-form-item-extra {
+  min-height: 18px;
+  margin-top: 2px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: right;
+}
+
 .settings-grid .ant-input-number,
 .settings-grid .ant-select,
 .settings-grid .ant-input {

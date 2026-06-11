@@ -98,11 +98,12 @@ def analyze_with_llm(subtitle_payload: str, llm_config: Optional[dict[str, Any]]
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "response_format": {"type": "json_object"},
         "temperature": 0.2,
         "max_tokens": 2200,
         "stream": False,
     }
+    if bool(config.get("use_response_format", False)):
+        payload["response_format"] = {"type": "json_object"}
 
     response = requests.post(
         f"{base_url}/chat/completions",

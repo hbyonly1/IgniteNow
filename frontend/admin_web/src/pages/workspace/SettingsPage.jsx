@@ -32,6 +32,7 @@ export default function SettingsPage() {
           base_url: llm.base_url ?? 'https://api.openai.com/v1',
           model: llm.model ?? 'gpt-4o-mini',
           timeout_seconds: llm.timeout_seconds ?? 90,
+          use_response_format: llm.use_response_format ?? false,
         },
       });
       setPromptTemplate(content);
@@ -53,6 +54,7 @@ export default function SettingsPage() {
         base_url: llm.base_url ?? 'https://api.openai.com/v1',
         model: llm.model ?? 'gpt-4o-mini',
         timeout_seconds: llm.timeout_seconds ?? 90,
+        use_response_format: llm.use_response_format ?? false,
       },
     });
     setPromptTemplate(loadedPromptTemplate);
@@ -115,6 +117,7 @@ export default function SettingsPage() {
                 base_url: 'https://api.openai.com/v1',
                 model: 'gpt-4o-mini',
                 timeout_seconds: 90,
+                use_response_format: false,
               },
             }}
           >
@@ -141,9 +144,10 @@ export default function SettingsPage() {
                           <Switch />
                         </Form.Item>
                         <Form.Item
+                          className="settings-api-key-item"
                           name={['llm', 'api_key']}
                           label={apiKeyConfigured ? 'API Key（已配置）' : 'API Key'}
-                          extra={apiKeyConfigured ? '已保存 API Key；留空不会覆盖现有密钥。' : undefined}
+                          extra={apiKeyConfigured ? '已保存 API Key，留空不会覆盖现有密钥' : undefined}
                         >
                           <Input placeholder={apiKeyConfigured ? '留空保持现有 API Key' : '请输入 API Key'} autoComplete="off" />
                         </Form.Item>
@@ -170,6 +174,13 @@ export default function SettingsPage() {
                           rules={[{ required: true, message: '请输入超时时间' }]}
                         >
                           <InputNumber min={5} max={300} step={5} />
+                        </Form.Item>
+                        <Form.Item
+                          name={['llm', 'use_response_format']}
+                          label="JSON 响应模式"
+                          valuePropName="checked"
+                        >
+                          <Switch />
                         </Form.Item>
                         <div className="settings-prompt-editor">
                           <h3>AI 识别 Prompt</h3>

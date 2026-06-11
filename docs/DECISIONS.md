@@ -43,6 +43,7 @@
 - 已删除原 `ai`、`review`、`player`、`upload`、`security` 分组中的占位字段；后续新增系统设置前，必须先接入对应业务逻辑，再同步 API 契约、前端表单和表数据。
 - 系统设置仅允许 `admin` 访问，`uploader` 不能读取或修改系统级配置，避免上传账号影响全局运行策略。
 - 2026-06-11 起系统设置新增已接入真实运行逻辑的 `llm` 分组：AI 分析任务优先读取数据库中的 API Key、Base URL、模型和超时配置；接口不回显 API Key 明文，未填写新 Key 时保留已有值。
+- `llm.use_response_format` 默认关闭；只有显式开启时才向 Chat Completions 请求体发送 `response_format={"type":"json_object"}`，避免豆包等兼容 OpenAI 协议但不支持 JSON response mode 的模型直接返回 400。
 
 ## 2026-06-11 阶段 2 内容资产字段补齐
 

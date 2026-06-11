@@ -369,7 +369,7 @@ Content-Type: multipart/form-data
 
 AI 高光识别只允许通过系统任务异步触发，不再提供同步 HTTP 分析接口。旧 `POST /api/episodes/{episode_id}/analyze` 已删除，管理后台和 uploader 都必须使用 `POST /api/system/jobs` 创建 `ai_analyze` 任务。
 
-AI 高光识别调用 LLM 进行识别，优先读取系统设置中的 LLM 配置，其次读取环境变量 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_TIMEOUT_SECONDS`。未配置 API Key 或调用失败时，任务标记为 `failed`，`job.error` 和 `episode.analyze_error` 中会记录失败原因；不存在降级到关键词规则的 fallback 路径。任务执行成功后会写入 `draft` 高光供审核发布。
+AI 高光识别调用 LLM 进行识别，优先读取系统设置中的 LLM 配置，其次读取环境变量 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、`LLM_TIMEOUT_SECONDS`、`LLM_USE_RESPONSE_FORMAT`。未配置 API Key 或调用失败时，任务标记为 `failed`，`job.error` 和 `episode.analyze_error` 中会记录失败原因；不存在降级到关键词规则的 fallback 路径。任务执行成功后会写入 `draft` 高光供审核发布。`use_response_format=false` 时不会向模型接口发送 `response_format`，用于兼容豆包等不支持 JSON response mode 的 OpenAI-compatible 接口。
 
 ### `GET /api/analysis/queue`
 
@@ -572,6 +572,7 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
       "base_url": "https://api.openai.com/v1",
       "model": "gpt-4o-mini",
       "timeout_seconds": 90,
+      "use_response_format": false,
       "api_key_configured": true
     }
   },
@@ -592,12 +593,13 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
     "clear_api_key": false,
     "base_url": "https://api.openai.com/v1",
     "model": "gpt-4o-mini",
-    "timeout_seconds": 90
+    "timeout_seconds": 90,
+    "use_response_format": false
   }
 }
 ```
 
-`api_key` 为空且 `clear_api_key=false` 时保留已保存密钥；`clear_api_key=true` 时清除已保存密钥。接口响应仍不回显密钥明文。旧的占位配置字段会返回 `422`。
+`api_key` 为空且 `clear_api_key=false` 时保留已保存密钥；`clear_api_key=true` 时清除已保存密钥。`use_response_format=true` 时后端会在 LLM 请求体中发送 `response_format={"type":"json_object"}`；不支持该参数的模型应设为 `false`。接口响应仍不回显密钥明文。旧的占位配置字段会返回 `422`。
 
 ### `GET /api/settings/prompt-template`
 

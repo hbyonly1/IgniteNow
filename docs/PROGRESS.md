@@ -35,11 +35,13 @@
 - 修复上传/审核 Modal 的按钮基础样式根因：移除 `.upload-drama-modal` 通用控件选择器里对 `.ant-btn` 的白底强制覆盖，避免 primary 按钮未悬停时被刷成白色。
 - 系统设置页新增 AI 识别 Prompt 编辑器；后端新增 `GET/PUT /api/settings/prompt-template`，直接读写 `ai_service/prompt_template.md`，保存后影响后续 LLM 分析任务。
 - 系统设置页新增 LLM 运行配置：支持保存启用状态、API Key、Base URL、模型和超时时间；后端 AI 分析任务优先读取 `system_setting.llm`，再回退到环境变量，API Key 不会通过读取接口明文回显。
+- LLM 请求体新增可配置 JSON 响应模式开关 `use_response_format`，默认关闭；系统设置页在 AI 识别 Prompt 上方提供开关，关闭时不再发送 `response_format={"type":"json_object"}`，兼容豆包 Seed 等不支持该参数的模型。
 
 ### 已验证
 - `python -m pytest tests/test_subtitle_asr.py tests/test_jobs.py --basetemp .codex-pytest-tmp` 覆盖字幕识别服务写回 SRT、已有字幕跳过和 `subtitle_asr` 任务创建。
 - `docker compose config` 渲染通过，确认 `app` 与 `worker` 的 `DATABASE_URL` 均为 `postgresql://...@postgres:5432/ignitenow`。
 - `LOG_DIR=backend/logs python -m pytest tests/test_system_settings.py tests/test_analysis.py --basetemp .codex-pytest-tmp` 通过，覆盖 LLM 设置保存、密钥不回显和 AI 分析配置透传。
+- `python -m pytest tests/test_llm_client.py tests/test_system_settings.py --basetemp .codex-pytest-tmp-llm` 通过，覆盖 `response_format` 默认不发送、开关开启后发送，以及系统设置保存。
 - `npm exec eslint .` 在 `frontend/admin_web` 下通过。
 - `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
 - `git diff --check` 通过。

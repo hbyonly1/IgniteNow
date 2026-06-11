@@ -76,6 +76,7 @@ def update_system_settings(
         "base_url": llm_payload["base_url"].strip(),
         "model": llm_payload["model"].strip(),
         "timeout_seconds": llm_payload["timeout_seconds"],
+        "use_response_format": llm_payload["use_response_format"],
     }
     if llm_payload["clear_api_key"]:
         next_llm["api_key"] = ""
