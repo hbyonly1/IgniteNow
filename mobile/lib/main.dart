@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'models/drama.dart';
 import 'models/episode_summary.dart';
 import 'pages/player_page.dart';
-import 'pages/upload_episode_page.dart';
 import 'services/api_client.dart';
 
 void main() {
@@ -46,12 +45,6 @@ class _DemoEntryPageState extends State<DemoEntryPage> {
     _catalogFuture = _loadCatalog();
   }
 
-  void _refreshCatalog() {
-    setState(() {
-      _catalogFuture = _loadCatalog();
-    });
-  }
-
   Future<List<DramaWithEpisodes>> _loadCatalog() async {
     final dramas = await _apiClient.fetchDramas();
     final result = <DramaWithEpisodes>[];
@@ -89,19 +82,6 @@ class _DemoEntryPageState extends State<DemoEntryPage> {
                       '选择数据库中的短剧和剧集，进入播放页验证时间轴触发和互动回传。',
                       style: TextStyle(color: Color(0xFFD8E1DC), fontSize: 16),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  FilledButton.icon(
-                    onPressed: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const UploadEpisodePage(),
-                        ),
-                      );
-                      _refreshCatalog();
-                    },
-                    icon: const Icon(Icons.cloud_upload),
-                    label: const Text('上传剧集'),
                   ),
                 ],
               ),
@@ -195,6 +175,7 @@ class _EpisodeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasHighlights = episode.publishedHighlightCount > 0;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
@@ -216,13 +197,18 @@ class _EpisodeTile extends StatelessWidget {
                   height: 44,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF2C14E),
+                    // 无高光时使用灰色底，提示联调时注意
+                    color: hasHighlights
+                        ? const Color(0xFFF2C14E)
+                        : const Color(0xFF2E4740),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     '${episode.episodeNo}',
-                    style: const TextStyle(
-                      color: Color(0xFF10201E),
+                    style: TextStyle(
+                      color: hasHighlights
+                          ? const Color(0xFF10201E)
+                          : const Color(0xFF8BADA6),
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -240,17 +226,62 @@ class _EpisodeTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        '${episode.duration.toStringAsFixed(0)}s · 已发布高光 ${episode.publishedHighlightCount} 个',
-                        style: const TextStyle(
-                          color: Color(0xFFBFD0CA),
-                          fontSize: 13,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            '${episode.duration.toStringAsFixed(0)}s',
+                            style: const TextStyle(
+                              color: Color(0xFFBFD0CA),
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (hasHighlights)
+                            // 有已发布高光：金色标签
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0x33F2C14E),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '${episode.publishedHighlightCount} 个高光',
+                                style: const TextStyle(
+                                  color: Color(0xFFF2C14E),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            )
+                          else
+                            // 无已发布高光：灰色提示
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E2D2A),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                '暂无高光',
+                                style: TextStyle(
+                                  color: Color(0xFF8BADA6),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right, color: Color(0xFFF2C14E)),
+                Icon(
+                  Icons.chevron_right,
+                  color: hasHighlights
+                      ? const Color(0xFFF2C14E)
+                      : const Color(0xFF2E4740),
+                ),
               ],
             ),
           ),

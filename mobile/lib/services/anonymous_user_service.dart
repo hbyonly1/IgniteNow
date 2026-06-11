@@ -13,4 +13,8 @@ class AnonymousUserService {
     await prefs.setString(_key, generated);
     return generated;
   }
+
+  /// 生成本次播放会话 ID，每次进入播放页调用一次，无需持久化。
+  String generateSessionId() =>
+      'session_${DateTime.now().microsecondsSinceEpoch}';
 }

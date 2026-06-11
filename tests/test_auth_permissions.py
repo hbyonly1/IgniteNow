@@ -97,12 +97,10 @@ def test_auth_response_matches_frontend_contract(client: TestClient, db_session)
     assert data["token_type"] == "Bearer"
     assert data["expires_in"] == settings.jwt_expire_minutes * 60
     assert data["user"] == {
-        "id": data["user_id"],
+        "id": data["user"]["id"],
         "username": "contract-admin",
         "role": "admin",
     }
-    assert data["username"] == "contract-admin"
-    assert data["role"] == "admin"
 
     me_response = client.get("/api/auth/me", headers={"Authorization": f"Bearer {data['access_token']}"})
     assert me_response.status_code == 200

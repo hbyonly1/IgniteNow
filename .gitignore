@@ -76,3 +76,5 @@ local.properties
 *.jks
 *.keystore
 artifacts/delivery/.demo-pids.json
+
+uploads/

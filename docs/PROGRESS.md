@@ -1,6 +1,65 @@
 # 开发进度
 
+## 2026-06-11 AI 分析功能完善计划执行
+
+### 已完成
+- 对照 `docs/implementation_plan.md` 确认复选框级联问题已修复：AI 分析表格 `rowSelection.checkStrictly=true`，短剧父行与子剧集勾选互不级联。
+- 确认字幕预处理已接入：AI 分析前先使用 `ai_service.subtitle_parser.parse_subtitle_text` 将 SRT 字幕解析为结构化时间段，再格式化为 `[start - end] text` 形式传给分析器，解析失败时保留原始文本兜底。
+- AI 分析页新增高光审核详情弹窗：点击剧集行“高光审核”后加载 `GET /api/episodes/{id}/highlights`，展示顶部剧集信息、左侧视频占位与时间轴高光点、选中高光编辑区、右侧高光列表筛选和底部统计。
+- 高光审核弹窗支持单条保存、通过、拒绝与批量提交待审核结果；保存使用 `PUT /api/highlights/{id}`，批量提交使用 `POST /api/episodes/{id}/highlights/bulk-status`。
+- 系统设置页新增 AI 识别 Prompt 编辑器；后端新增 `GET/PUT /api/settings/prompt-template`，直接读写 `ai_service/prompt_template.md`，保存后影响后续 LLM 分析任务。
+
+### 已验证
+- `npm exec eslint .` 在 `frontend/admin_web` 下通过。
+- `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+
+## 2026-06-11 内容管理批量上传功能
+
+### 已完成
+- 将内容管理页面的「上传短剧」与「新增剧集」素材上传区重构，抽象并集成了全新的 `EpisodeBatchUploader` 组件，实现多视频和多字幕的拖拽批量上传、智能基于文件名提取集数序号配对。
+- 完善前端多文件批量预览表格，支持用户手动从下拉列表中给无法识别序号的视频分配字幕，并提供删除配对项的行操作。
+- 升级批量提交逻辑：`submitDrama` 与 `submitEpisodeAsset` 现支持循环上传解析出的多组有效素材。循环时如遇到单集失败，会记录异常并跳过，继续后续集数的上传；并在所有任务完成后显示“成功 X 集，失败 Y 集”的汇总通知。
+- 配合批量提交，增加了直观的文字加进度条的精确提示控件 (`uploadProgress`)，告知目前正处于全部上传队列的进度情况。
+- 修复了短剧与剧集删除功能，补充了缺失的 `Popconfirm` 删除按键与完整的重新加载动作调用。并在列表最右侧对齐调整了删除按钮的样式，使其拥有标准的红色边框和红色图标。
+- 移除了上传界面“剧集”数量输入框不合理的默认值（不再默认为24），并与其它组件统一样式加上了灰色文字占位。
+- 优化了新增剧集弹窗内部的布局逻辑，移除了多余的“剧集信息”和两列布局结构，让批量上传控件铺满整个水平空间，并将说明文案提至最上方标题下，AI 分析设置顺延排布于下方。
+- 优化了 `EpisodeBatchUploader` 的拖拽交互：将之前分离的视频与字幕上传区合并成了一个宽大的、带有灰色虚线引导框的统一入口，大大增加了可识别的拖拽区域。用户现在可以把视频和字幕一揽子全选拖入，系统会自动根据扩展名和文件名进行分类和集数配对。
+- 重构了短剧封面的交互与视觉（包括竖版与横版）：移除了生硬的底层附件列表，采用无缝的「沉浸式图片内嵌预览」结合「悬浮半透明遮罩与删除操作」。现在无论是在上传新封面还是打开已有的短剧信息，都会直接在框内全屏显示封面缩略图，大幅提升了 SaaS 界面的优雅感。
+- 修复了因为 Ant Design 表单 Modal 开启 `destroyOnHidden` 带来的生命周期数据抹除 Bug：通过补全 `useEffect` 在组件完整挂载后再进行 `setFieldsValue` 回填，彻底解决了点击「编辑短剧」时由于挂载时机错位导致所有旧数据无法加载的严重问题。
+- 统一了数据列表操作栏按钮的大小和视觉层级：放大并加粗了「编辑信息」与「管理剧集」的字号，去掉了删除按钮不统一的内联高度设置，现在所有按钮强制对齐为高度 32px 的标准组件尺寸，删除按钮采用标准的浅红底色、红框与大号红色 Icon。
+
+### 已验证
+- `npm run build` 在 `frontend/admin_web` 重新编译通过。
+- `git diff --check` 语法检查通过。
+
+### 遗留问题
+- 后台上传采用逐一顺序执行循环，批量量过大时可能会导致请求时间极长，甚至受限于前端连接或超时策略；在长远规划中可考虑移入真实并发上传与后端离线上传处理中心。
+
+## 2026-06-11 阶段 3：强化发布与移动端回流
+
+### 已完成
+- 删除移动端上传页面 `upload_episode_page.dart`、上传入口按钮（`main.dart`）和 `api_client.dart` 中的 `uploadEpisode` / `register` / `login` / `_multipartFile` 方法；播放端只保留播放和互动回传接口。
+- 移动端新增 `play_session_id` 支持：`InteractionPayload` 增加可选 `playSessionId` 字段并序列化到 JSON；`AnonymousUserService` 新增 `generateSessionId()` 方法；`PlayerPage` 进入播放页时调用 `generateSessionId`，并随每次 `impression`/`click`/`ignore` 携带同一会话 ID 上报。
+- 移动端新建 `interaction_queue.dart`：内存重试队列，互动日志网络失败时自动入队，每 10 秒重试一轮，最多重试 5 次，页面销毁时释放资源。`InteractionLogger` 改用队列发送；`PlayerPage.dispose` 同步释放 logger。
+- 后端 `backend/app/jobs/tasks.py` 新增 `run_scheduled_publish()`：扫描 `publish_job.scheduled_at <= now` 且 `status=pending` 的定时发布单并执行，调用已有 `_execute_publish_job` 逻辑，每条发布单独立事务，失败不阻塞其他单。
+- 后端 `main.py` 引入 FastAPI `lifespan` + asyncio 后台任务，每 60 秒通过 `asyncio.to_thread` 调用 `run_scheduled_publish`，服务关闭时取消任务。
+- 发布中心前端增强：待发布表格新增「草稿高光」和「已发布高光」计数列（橙/绿高亮，零值灰色）；最近发布记录拆分「曝光」「点击」「点击率」三列展示真实数字；失败发布单新增「重试」按钮（调用 `/api/publish/jobs/{id}/retry`）。
+- 修复创建短剧表单中的剧集数量 InputNumber 占位符问题：增加 "请输入剧集数量" placeholder，与邻近输入组件的灰色提示文字风格保持一致。
+
+### 已验证
+- `LOG_DIR=backend/logs .venv312/bin/python -m pytest tests --basetemp .codex-pytest-tmp` 通过，共 46 个测试。
+- `PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache .venv312/bin/python -m compileall backend/app` 通过。
+- `npm exec eslint .` 在 `frontend/admin_web` 下通过。
+- `npm run build` 在 `frontend/admin_web` 下通过；Vite 仍提示 Ant Design 单个 chunk 超过 500k，为既有体积提示。
+- `git diff --check` 通过。
+- Flutter `analyze` 命令在当前环境不可用（flutter 未加入 PATH），Dart 源码改动为类型安全的可选字段新增和方法删除，无语法风险。
+
+### 遗留问题
+- `play_session_id` 目前已随互动日志上报至后端，后端 `user_interaction_log` 表尚无该字段存储；如需按会话聚合统计，应在后续阶段为表新增 `play_session_id` 列并同步 API 契约。
+- 定时发布 worker 每分钟由 uvicorn 主进程 asyncio 调度，多实例部署场景下可能重复执行；生产环境建议迁移到独立 cron 或数据库锁机制。
+
 ## 2026-06-11 阶段 1 真实数据收口
+
 
 ### 已完成
 - AI 分析页删除无真实任务时的 mock 行和 mock 任务详情数据；任务列表改为真实空状态，提供“新建分析任务”和“去内容管理”入口，任务详情页只加载 `/api/system/jobs/{job_id}` 真实数据。
@@ -54,6 +113,13 @@
 - 按 `BACKEND_MOBILE_INTEGRATION_PLAN.md` 阶段 1 开始推进真实数据接入：仪表盘替换占位页，接入 `/api/analytics/overview`、`/api/analytics/highlight-types`、`/api/analytics/top-actions` 和 `/api/analytics/highlight-ranking`，展示核心指标、类型分布、热门按钮和高光排行。
 - 发布中心真实化第一阶段落地：新增 `publish_job`、`publish_job_item` 模型与 SQL 表，新增 `/api/publish/pending-items`、`/api/publish/jobs`、`/api/publish/jobs/one-click`、发布单详情、重试和配置保存接口；管理后台发布中心替换静态 mock 数据，单行发布、一键发布、最近发布记录均接真实接口。
 - 系统设置真实读写第一阶段落地：新增 `system_setting` 模型与 SQL 表，新增 `/api/system/settings` 读写接口；系统设置页删除“接口未接入”占位提示，改为启动读取、保存落库、重新加载和恢复默认值。
+- 删除系统设置中未接入真实运行逻辑的占位选项：后端默认设置与请求 schema 清空，`PUT /api/system/settings` 仅接受空对象，前端系统设置页改为“暂无已接入设置项”的空状态。
+- 继续收敛前端运营页细节：仪表盘、AI 分析和发布中心指标卡删除灰色说明行；AI 分析空状态删除二次入口按钮；系统设置页保留原设置样式骨架，单个占位分类下提供底部右对齐“恢复默认 / 应用设置”操作；新建分析任务的资产搜索框修复内部边框断开问题。
+- 阶段 2 内容资产真实化启动：补齐 `drama.wide_cover_url`、`drama.categories_json`、`drama.cast_tags_json`、`drama.updated_at`、`episode.asset_status` 和 `episode.updated_at`；`GET/POST/PUT /api/dramas` 以数组形式读写分类和主演标签，`GET/POST/PUT /api/episodes` 暴露并校验素材状态；内容管理上传短剧表单提交真实 `categories` / `cast_tags`，不再使用静态默认标签。
+- 阶段 2 后台素材上传继续落地：新增 `episode.video_width`、`episode.video_height`、`episode.video_file_size`、`episode.video_mime_type`；新增 `/api/admin/assets/files` 支持封面/横版封面/图片/视频/字幕上传，视频通过 ffprobe 解析元数据，并通过 `/uploads` 静态路径返回可访问素材 URL；新增 `/api/dramas/{drama_id}/episodes/upload` 为指定短剧上传单集视频/字幕并创建真实 episode。
+- 内容管理“上传短剧”弹窗接入真实上传链路：选择封面/横版封面后先上传素材并写入 `cover_url` / `wide_cover_url`，选择 MP4 后创建短剧并上传第 1 集，选择字幕则随视频创建 episode；开启“上传后立即开始分析”时会继续创建 `ai_analyze` 异步任务。原静态假文件 chip 已替换为真实已选择文件状态。
+- 内容管理“剧集管理”页继续接真实操作：顶部“新增剧集”可上传 MP4/字幕创建新 episode 并可提交 AI 分析；右侧“替换视频”会上传新 MP4、解析元数据并更新当前 episode；“管理字幕”会上传字幕文件并写回 `subtitle_content` / `subtitle_url`。
+- 真正删除后端同步分析路由处理函数，AI 分析继续只允许通过 `/api/system/jobs` 创建 `ai_analyze` 异步任务。
 - 新增 `docs/BACKEND_MOBILE_INTEGRATION_PLAN.md`，基于当前前端页面、后端接口和 Flutter 播放端，整理后端后续开发、Android 衔接、前端增删改和测试补齐方案。
 
 ### 已验证
@@ -65,6 +131,12 @@
 - 本次仪表盘真实数据接入后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
 - 本次发布中心真实化后，`LOG_DIR=backend/logs python -m pytest tests --basetemp .codex-pytest-tmp` 通过，共 35 个测试；`npm exec eslint .` 与 `npm run build` 在 `frontend/admin_web` 下通过。
 - 本次系统设置真实读写接入后，`LOG_DIR=backend/logs python -m pytest tests --basetemp .codex-pytest-tmp` 通过，共 37 个测试；`python -m compileall backend/app`、`npm exec eslint .` 与 `npm run build` 在 `frontend/admin_web` 下通过。
+- 本次系统设置占位项清理后，`PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache python3 -m compileall backend/app`、`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过；尝试执行 `LOG_DIR=backend/logs python3 -m pytest tests/test_system_settings.py --basetemp .codex-pytest-tmp` 时，当前系统 Python 缺少 `structlog`，测试在加载 `backend.app.main` 时中止，未进入用例执行。
+- 本次前端运营页细节修复后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
+- 本次阶段 2 内容资产字段补齐后，`PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache python3 -m compileall backend/app backend/scripts`、`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过；尝试执行 `LOG_DIR=backend/logs python3 -m pytest tests/test_content_assets.py tests/test_analysis_queue.py --basetemp .codex-pytest-tmp` 时，当前系统 Python 缺少 `structlog`，测试在加载 `backend.app.main` 时中止，未进入用例执行。
+- 按用户要求创建 `.venv312` 并执行 `.venv312/bin/python -m pip install -r backend/requirements.txt` 后，后端依赖已补齐；`LOG_DIR=backend/logs .venv312/bin/python -m pytest tests --basetemp .codex-pytest-tmp` 通过，共 46 个测试；`PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache .venv312/bin/python -m compileall backend/app backend/scripts` 和 `git diff --check` 通过。
+- 本次内容管理真实上传接入后，`LOG_DIR=backend/logs .venv312/bin/python -m pytest tests --basetemp .codex-pytest-tmp` 通过，共 46 个测试；`npm exec eslint .`、`npm run build` 和 `PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache .venv312/bin/python -m compileall backend/app backend/scripts` 均通过。
+- 本次剧集管理操作接入后，`npm exec eslint .` 与 `npm run build` 在 `frontend/admin_web` 下通过。
 - 本次 AI 分析页批量操作区调整后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
 - 本次内容管理页高度修复后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
 - 本次内容管理表格宽度和操作列调整后，`npm exec eslint .`、`npm run build` 和 `git diff --check` 均通过。
@@ -389,3 +461,39 @@
 ### 已验证
 - API 冒烟测试：访问正常的 `/health` 接口，验证 JSON 日志输出在控制台和日志文件中，且未写入数据库。
 - 异常链路拦截测试：通过 `/api/auth/login` 触发 `422 Unprocessable Entity`，验证系统准确在控制台和文件中输出 `WARNING` 级别 JSON，且正确记录到了 `SystemLog` 数据库表中。
+
+## 2026-06-10 - 管理后台表格排版优化
+**改动内容**：
+- 废弃了 `DramasPage.jsx` 中 `episodeColumns` 和 `dramaColumns` 的百分比宽度（`width: '14%'` 等），改为硬编码的像素固定宽度结合弹性列（`minWidth`）。
+- 为表格增加横向滚动能力（`scroll={{ x: 800 }}` 和 `scroll={{ x: 1000 }}`），在小屏幕或侧边栏展开时，允许表格溢出滚动，而不再强行挤压内部元素。
+- 在 `workspace.css` 和内联样式中全面引入 `white-space: nowrap` 规则，强制保护“状态标签”、表头列名（如“字幕状态”）、以及“更新时间”等原子数据在一行内完整展示，杜绝难看的文字截断或多行折断。
+
+**验证方式**：
+- 缩放浏览器视口宽度，并进入短剧管理页的“管理剧集”面板，观察表格内容是否出现水平滚动条，以及文本是否保持单行。
+
+**遗留问题/风险**：
+- 暂无。
+
+## 2026-06-11 - AI 分析高光审核弹窗样式收口
+
+### 已完成
+- 删除临时旧样式预览入口。
+- 高光审核弹窗改为复用内容管理编辑信息同一套 `upload-drama-modal`、`upload-drama-form`、`upload-drama-card` 和 `upload-drama-footer` 样式。
+- AI 分析表格勾选短剧时保留父子级联选择，剧集会随短剧一起被选中。
+- 继续压缩高光审核详情标题、筛选栏和表头上下间距，右侧高光表格进一步贴近内容管理表格样式；底部统计移动到最左侧并移除“已归档”展示。
+- AI 分析列表单集行的重新提交按钮增加“重新分析”文字；高光审核详情顶部摘要中的短剧标题区域缩短并支持超长标题省略。
+- 高光审核详情顶部“分析完成时间”固定到摘要行最右侧；修正右侧高光列表搜索框与类型/状态筛选框的垂直对齐。
+- 为高光审核列表“搜索识别依据关键词”输入框增加独立样式，覆盖 `upload-drama-modal` 全局输入框高度，统一外壳、内层输入和搜索图标的 30px 对齐。
+- 高光审核左侧“视频时间轴”从占位图改为真实 HTML video 控件；下方新增独立审核进度条，按后端高光 `start_time` 标记彩色高光点，点击 marker 会选中高光并跳转视频时间；新增“人工添加”按钮，可按当前播放时间调用 `POST /api/episodes/{id}/highlights` 创建 draft 高光；右侧搜索框宽度改为与相邻筛选框一致。
+- 修复高光审核右侧 AI 识别高光列表未撑满纵向容器的问题，补齐 `highlight-review-table` 与 Ant Table 内部 wrapper 的 flex 高度链路。
+- 删除播放器下方独立高光类型 legend，改为在进度条每个高光 marker 下直接显示对应类型文字；“人工添加”按钮移动到“选中高光编辑”标题右侧并重做按钮样式；编辑区移除“AI识别”标签，审核状态下拉移除“已归档”选项；开始/结束时间标题右侧新增定位按钮，可把当前视频播放时间同步到对应输入框；对照后端确认 `reason`/“识别依据”等字段真实存在。
+- 强化高光编辑选中反馈：编辑面板顶部新增当前编辑高光状态条，展示选中高光的类型、时间范围和审核状态；进度条选中的高光 marker 增强描边、阴影和类型文字强调；“添加高光”按钮固定为蓝底，避免未悬停时发白。
+- 高光时间轴从点状 marker 改为段状 range，使用 `start_time` 到 `end_time` 的长度表达高光片段；编辑面板拆分 `编辑高光` 与 `新增高光` 两种模式，点击“新增高光”后开始/结束时间均等于当前播放时间，未修改成合法时间段时禁用“创建高光”，并提供“取消新增”回到上一次选中高光。
+
+### 已验证
+- `npm exec eslint .` 通过。
+- `npm run build` 通过，Vite 仍提示单个 JS chunk 超过 500k，为当前 Ant Design 单包构建的既有体积提示。
+- `git diff --check` 通过。
+
+### 遗留问题/风险
+- 暂无。

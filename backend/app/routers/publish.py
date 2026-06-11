@@ -192,7 +192,7 @@ def pending_items(status: str = "all", db: Session = Depends(get_db)):
                 drama_title=drama.title,
                 episode_no=episode.episode_no,
                 status=item_status,
-                updated_at=episode.created_at,
+                updated_at=episode.updated_at,
                 draft_highlight_count=draft_count,
                 published_highlight_count=published_count,
                 last_publish_job_id=latest_item.publish_job_id if latest_item else None,
@@ -292,3 +292,85 @@ def save_publish_config(episode_id: int, payload: PublishConfigUpdate, db: Sessi
         },
         "publish config saved",
     )
+
+
+@router.get("/jobs/{job_id}/analytics")
+def publish_job_analytics(job_id: int, db: Session = Depends(get_db)):
+    """发布单维度回流统计。
+    按该发布单涵盖的剧集，聚合各集及全局的曝光、点击、忽略和点击率数据。
+    时间范围为发布单 created_at 之后的所有互动日志。
+    """
+    job = db.get(PublishJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="publish job not found")
+
+    items = list(job.items)
+    episode_ids = [item.episode_id for item in items]
+    if not episode_ids:
+        return ok({"job_id": job_id, "total": _empty_stats(), "by_episode": []})
+
+    # 发布单涉及剧集的所有互动，从发布时间点开始计算
+    base_query = (
+        db.query(UserInteractionLog)
+        .filter(
+            UserInteractionLog.episode_id.in_(episode_ids),
+            UserInteractionLog.created_at >= job.created_at,
+        )
+    )
+
+    # 全局汇总
+    rows = (
+        base_query
+        .with_entities(UserInteractionLog.action_type, func.count(UserInteractionLog.id))
+        .group_by(UserInteractionLog.action_type)
+        .all()
+    )
+    total_counts = {action_type: count for action_type, count in rows}
+    total = _make_stats(total_counts)
+
+    # 按剧集汇总
+    episode_rows = (
+        base_query
+        .with_entities(
+            UserInteractionLog.episode_id,
+            UserInteractionLog.action_type,
+            func.count(UserInteractionLog.id),
+        )
+        .group_by(UserInteractionLog.episode_id, UserInteractionLog.action_type)
+        .all()
+    )
+    episode_data: dict[int, dict[str, int]] = {}
+    for episode_id, action_type, count in episode_rows:
+        episode_data.setdefault(episode_id, {"impression": 0, "click": 0, "ignore": 0})
+        if action_type in episode_data[episode_id]:
+            episode_data[episode_id][action_type] = count
+
+    episodes = db.query(Episode).filter(Episode.id.in_(episode_ids)).all()
+    episode_titles = {ep.id: ep.title for ep in episodes}
+
+    by_episode = [
+        {
+            "episode_id": episode_id,
+            "title": episode_titles.get(episode_id, f"episode_{episode_id}"),
+            **_make_stats(episode_data.get(episode_id, {})),
+        }
+        for episode_id in episode_ids
+    ]
+
+    return ok({"job_id": job_id, "total": total, "by_episode": by_episode})
+
+
+def _empty_stats() -> dict:
+    return {"impressions": 0, "clicks": 0, "ignores": 0, "click_rate": 0.0}
+
+
+def _make_stats(counts: dict[str, int]) -> dict:
+    impressions = counts.get("impression", 0)
+    clicks = counts.get("click", 0)
+    ignores = counts.get("ignore", 0)
+    return {
+        "impressions": impressions,
+        "clicks": clicks,
+        "ignores": ignores,
+        "click_rate": round(clicks / impressions, 4) if impressions else 0.0,
+    }

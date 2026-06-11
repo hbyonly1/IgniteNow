@@ -26,6 +26,7 @@ Authorization: Bearer <access_token>
 - `highlight_event.status`: `draft`、`published`、`rejected`、`archived`
 - `highlight_type`: `conflict`、`reversal`、`sweet`、`satisfying`、`suspense`
 - `action_type`: `impression`、`click`、`ignore`
+- `episode.asset_status`: `draft`、`ready`、`incomplete`
 - 时间单位：秒，字段类型为 number/float
 
 ## 账号认证 API
@@ -61,7 +62,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-`user_id`、`username`、`role` 为兼容当前移动端上传代码保留；新接入方优先读取 `user`。
+
 
 ### `POST /api/auth/login`
 
@@ -109,39 +110,14 @@ python backend/scripts/bootstrap_admin.py
 
 该脚本只在不存在管理员时创建第一个 `admin`，并输出一次性随机密码；已有管理员时不会覆盖密码。
 
-### `POST /api/uploads/episodes`
+### ~~`POST /api/uploads/episodes`~~ ⚠️ 已下线
 
-移动端上传单集视频和字幕并入库。需要：
+**此接口已返回 `410 Gone`，不再接受请求。**
 
-```http
-Authorization: Bearer <access_token>
-Content-Type: multipart/form-data
-```
+移动端上传链路已确定下线。内容上传请使用管理后台接口：
+- 通用素材上传：`POST /api/admin/assets/files`
+- 单集视频上传：`POST /api/dramas/{drama_id}/episodes/upload`
 
-表单字段：
-
-- `drama_id`: 可选；传入时挂到已有短剧。
-- `drama_title`: 可选；未传 `drama_id` 时必填，用于创建新短剧。
-- `drama_description`: 可选。
-- `episode_no`: 必填，整数。
-- `episode_title`: 必填。
-- `duration`: 可选，秒。
-- `video_file`: 必填，仅支持 `.mp4`。
-- `subtitle_file`: 可选，支持 `.srt`、`.vtt`、`.txt`。
-- `subtitle_content`: 可选；无字幕文件时可直接传字幕文本。
-
-响应 `data`：
-
-```json
-{
-  "drama_id": 2,
-  "episode_id": 10,
-  "video_url": "http://localhost:8000/api/player/episodes/10/video",
-  "has_subtitle": true
-}
-```
-
-上传文件保存在服务端本地 `backend/uploads/`，数据库中的 `episode.video_url` 保存为服务端本地文件路径，播放端继续通过 `/api/player/episodes/{episode_id}/video` 代理播放。上传生成的剧集会写入当前账号为 `owner_user_id`。
 
 ## 管理后台 API
 
@@ -157,7 +133,12 @@ Content-Type: multipart/form-data
   "title": "逆光归来",
   "description": "演示短剧",
   "cover_url": "",
+  "wide_cover_url": "",
+  "categories": ["都市", "逆袭"],
+  "cast_tags": ["主演A"],
   "status": "active",
+  "created_at": "2026-06-11T10:00:00",
+  "updated_at": "2026-06-11T10:00:00",
   "episode_count": 12,
   "pending_episode_count": 3,
   "processing_episode_count": 1,
@@ -177,7 +158,10 @@ Content-Type: multipart/form-data
 {
   "title": "逆光归来",
   "description": "演示短剧",
-  "cover_url": ""
+  "cover_url": "",
+  "wide_cover_url": "",
+  "categories": ["都市", "逆袭"],
+  "cast_tags": ["主演A"]
 }
 ```
 
@@ -190,6 +174,9 @@ Content-Type: multipart/form-data
   "title": "逆光归来",
   "description": "演示短剧",
   "cover_url": "",
+  "wide_cover_url": "",
+  "categories": ["都市", "逆袭"],
+  "cast_tags": ["主演A"],
   "status": "active"
 }
 ```
@@ -213,8 +200,15 @@ Content-Type: multipart/form-data
   "subtitle_url": "",
   "subtitle_content": "",
   "duration": 30,
+  "asset_status": "draft",
+  "video_width": 1080,
+  "video_height": 1920,
+  "video_file_size": 10485760,
+  "video_mime_type": "video/mp4",
   "analyze_status": "pending",
   "analyze_error": "",
+  "created_at": "2026-06-11T10:00:00",
+  "updated_at": "2026-06-11T10:00:00",
   "draft_highlight_count": 0,
   "published_highlight_count": 0,
   "rejected_highlight_count": 0,
@@ -234,7 +228,12 @@ Content-Type: multipart/form-data
   "video_url": "https://example.com/demo.mp4",
   "subtitle_url": "",
   "subtitle_content": "1\n00:00:02,000 --> 00:00:05,000\n真相终于曝光。",
-  "duration": 30
+  "duration": 30,
+  "asset_status": "draft",
+  "video_width": 1080,
+  "video_height": 1920,
+  "video_file_size": 10485760,
+  "video_mime_type": "video/mp4"
 }
 ```
 
@@ -250,15 +249,127 @@ Content-Type: multipart/form-data
   "video_url": "https://example.com/demo.mp4",
   "subtitle_url": "",
   "subtitle_content": "1\n00:00:02,000 --> 00:00:05,000\n真相终于曝光。",
-  "duration": 30
+  "duration": 30,
+  "asset_status": "ready",
+  "video_width": 1080,
+  "video_height": 1920,
+  "video_file_size": 10485760,
+  "video_mime_type": "video/mp4"
 }
 ```
+
+`asset_status` 仅允许 `draft`、`ready`、`incomplete`。后台真实上传视频/字幕后应同步更新该字段；AI 分析聚合接口仍会在缺少视频或字幕时返回 `incomplete`。`video_width`、`video_height`、`video_file_size`、`video_mime_type` 由后台上传接口通过 ffprobe 自动解析，手动创建/编辑接口保留这些字段用于兼容已有配置流。
+
+### `POST /api/admin/assets/files`
+
+后台通用素材上传接口。需要 `admin` Bearer token。
+
+```http
+Content-Type: multipart/form-data
+```
+
+表单字段：
+
+- `asset_type`: `cover`、`wide_cover`、`image`、`video`、`subtitle`
+- `file`: 上传文件；图片支持 `.jpg`、`.jpeg`、`.png`、`.webp`，视频支持 `.mp4`，字幕支持 `.srt`、`.vtt`、`.txt`
+
+响应 `data`：
+
+```json
+{
+  "asset_type": "video",
+  "url": "/server/local/path/episode.mp4",
+  "path": "/server/local/path/episode.mp4",
+  "file_size": 10485760,
+  "mime_type": "video/mp4",
+  "metadata": {
+    "duration": 30,
+    "width": 1080,
+    "height": 1920,
+    "file_size": 10485760,
+    "mime_type": "video/mp4"
+  }
+}
+```
+
+`url` 返回 `/uploads/...` 静态可访问地址，`path` 返回服务端本地保存路径；封面等前端展示字段应保存 `url`。视频上传会调用 `ffprobe` 解析元数据；部署环境必须包含 FFmpeg/ffprobe。解析失败、超时或文件不含视频流时返回 `400`。
+
+### `POST /api/dramas/{drama_id}/episodes/upload`
+
+管理后台为指定短剧上传单集视频并创建 episode。需要 `admin` 或 `uploader` Bearer token；新剧集会写入当前账号为 `owner_user_id`。
+
+```http
+Content-Type: multipart/form-data
+```
+
+表单字段：
+
+- `episode_no`: 必填，整数，大于 0
+- `episode_title`: 必填
+- `video_file`: 必填，`.mp4`
+- `subtitle_file`: 可选，`.srt`、`.vtt`、`.txt`
+- `subtitle_content`: 可选，字幕文本；存在字幕文件时以文件内容为准
+
+响应 `data` 同 `EpisodeOut`，并包含 ffprobe 写入的 `duration`、`video_width`、`video_height`、`video_file_size`、`video_mime_type`。有字幕时 `asset_status=ready`，无字幕时 `asset_status=incomplete`。
+
+### `POST /api/dramas/{drama_id}/episodes/batch`
+
+批量创建剧集配置（不含文件上传）。需要 `admin` Bearer token。
+每条记录传入 `video_url`、字幕等基础字段；适合已有视频地址时批量导入剧集列表。
+
+```json
+{
+  "episodes": [
+    {
+      "episode_no": 1,
+      "title": "第 1 集",
+      "video_url": "https://example.com/ep1.mp4",
+      "duration": 120,
+      "asset_status": "draft"
+    },
+    {
+      "episode_no": 2,
+      "title": "第 2 集",
+      "video_url": "https://example.com/ep2.mp4",
+      "duration": 130,
+      "asset_status": "draft"
+    }
+  ]
+}
+```
+
+规则：`episode_no` 不允许重复，最多 100 条/次。响应 `data`：
+
+```json
+{
+  "created_count": 2,
+  "episode_ids": [11, 12]
+}
+```
+
+### `POST /api/dramas/{drama_id}/enqueue-analysis`
+
+按短剧批量提交 AI 分析任务。需要 `admin` Bearer token。
+
+对该短剧下所有 `analyze_status=pending` 或 `failed` 的剧集提交 `ai_analyze` 任务；已在 `processing` 或 `success` 状态的剧集跳过，避免重复计算。
+
+响应 `data`：
+
+```json
+{
+  "queued_count": 3,
+  "job_ids": [20, 21, 22],
+  "errors": []
+}
+```
+
+`errors` 非空表示部分剧集提交失败（如 Redis 不可用），其余成功提交的不受影响。
 
 ### AI 分析触发方式
 
 AI 高光识别只允许通过系统任务异步触发，不再提供同步 HTTP 分析接口。旧 `POST /api/episodes/{episode_id}/analyze` 已删除，管理后台和 uploader 都必须使用 `POST /api/system/jobs` 创建 `ai_analyze` 任务。
 
-AI 高光识别默认逻辑：存在 `LLM_API_KEY` 时优先调用大模型；未配置或调用失败时使用本地关键词 fallback，保证演示链路可恢复。任务执行成功后会写入 `draft` 高光；执行失败时会写入 `job.error`，并按失败原因更新 `episode.analyze_status` / `episode.analyze_error`。
+AI 高光识别调用 LLM 进行识别，需配置 `LLM_API_KEY`。未配置或调用失败时，任务标记为 `failed`，`job.error` 和 `episode.analyze_error` 中会记录失败原因；不存在降级到关键词规则的 fallback 路径。任务执行成功后会写入 `draft` 高光供审核发布。
 
 ### `GET /api/analysis/queue`
 
@@ -395,6 +506,14 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 
 仅允许重试 `failed` 状态的任务；接口会创建新的 `job` 记录，不覆盖原任务。
 
+### `POST /api/system/jobs/{job_id}/cancel`
+
+取消等待中的任务。需要 `admin` 或 `uploader` Bearer token。
+
+**只允许取消 `pending` 状态的任务。** `running` 状态的任务已交给 RQ worker 执行，无法从 HTTP 层安全终止，应等待其完成后重试或人工干预。
+
+响应 `data` 为更新后的 `JobOut`。
+
 ### `GET /api/system/logs`
 
 查询全局结构化异常日志（来自于 `system_log` 表，主要包含 `WARNING` 和 `ERROR` 记录）。需要 `admin` 或 `uploader` Bearer token。
@@ -427,59 +546,45 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 
 ### `GET /api/system/settings`
 
-读取系统设置。需要 `role=admin` 的 Bearer token。第一版设置按分组保存到 `system_setting` 表，未保存过时返回后端默认值。
+读取系统设置。需要 `role=admin` 的 Bearer token。`system_setting` 表仅保留通用持久化结构；未接入真实运行逻辑的配置项不在接口中暴露。
 
 响应 `data`：
 
 ```json
 {
-  "settings": {
-    "ai": {
-      "llm_enabled": false,
-      "base_url": "https://api.openai.com/v1",
-      "model": "gpt-4o-mini",
-      "timeout_seconds": 60,
-      "fallback_enabled": true,
-      "max_highlights_per_episode": 8,
-      "allow_force_reanalyze": true
-    },
-    "review": {
-      "require_no_overlap": true,
-      "min_confidence": 0.65,
-      "default_highlight_status": "draft",
-      "confirm_bulk_publish": true,
-      "mark_low_confidence": true
-    },
-    "player": {
-      "overlay_duration_ms": 4000,
-      "default_position": "bottom",
-      "enable_effects": true,
-      "record_ignore": true,
-      "anonymous_user_strategy": "persisted_device_id"
-    },
-    "upload": {
-      "max_video_size_mb": 500,
-      "allowed_subtitle_formats": "srt,vtt,txt",
-      "allow_without_subtitle": true,
-      "default_duration_seconds": 0,
-      "auto_enqueue_analysis": false
-    },
-    "security": {
-      "jwt_expire_minutes": 120,
-      "uploader_can_create_drama": false,
-      "uploader_can_force_reanalyze": true,
-      "audit_admin_actions": true,
-      "session_expiry_action": "redirect_login"
-    }
-  },
-  "updated_at": "2026-06-10T15:00:00",
-  "updated_by_user_id": 1
+  "settings": {},
+  "updated_at": null,
+  "updated_by_user_id": null
 }
 ```
 
 ### `PUT /api/system/settings`
 
-保存系统设置。需要 `role=admin` 的 Bearer token。请求体与 `settings` 对象结构一致；后端会将缺失字段与默认值合并后按分组保存。第一版仅保证配置持久化和回显，具体运行时生效由后续功能逐项接入。
+保存系统设置。需要 `role=admin` 的 Bearer token。当前没有已接入真实运行逻辑的设置项，请求体只接受空对象 `{}`；旧的占位配置字段会返回 `422`。
+
+### `GET /api/settings/prompt-template`
+
+读取 AI 高光识别 Prompt 模板。需要 `role=admin` 的 Bearer token。该接口直接读取 `ai_service/prompt_template.md`，因此保存后会影响后续 LLM 分析任务。
+
+响应 `data`：
+
+```json
+{
+  "content": "# IgniteNow 高光识别 Prompt 模板\n..."
+}
+```
+
+### `PUT /api/settings/prompt-template`
+
+保存 AI 高光识别 Prompt 模板。需要 `role=admin` 的 Bearer token。请求体：
+
+```json
+{
+  "content": "请输出 highlights，并包含 highlight_type 字段..."
+}
+```
+
+`content` 长度为 20-20000 字符，并且必须包含 `highlights` 与 `highlight_type` 约束词，避免误保存完全不可用的模板。
 
 ### `GET /api/episodes/{episode_id}/highlights`
 
@@ -565,6 +670,29 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 ### `GET /api/analytics/highlights/{highlight_id}`
 
 返回单条高光的互动统计。需要 `role=admin` 的 Bearer token。
+
+### `GET /api/analytics/trend`
+
+按日期分组返回互动趋势数据。需要 `role=admin` 的 Bearer token。
+
+查询参数：
+
+- `from_date`: 可选，格式 `YYYY-MM-DD`，起始日期（含）；未传时默认最近 30 天
+- `to_date`: 可选，格式 `YYYY-MM-DD`，结束日期（含）
+
+响应 `data` 为数组，每项代表一天：
+
+```json
+[
+  {
+    "date": "2026-06-10",
+    "impression": 120,
+    "click": 45,
+    "ignore": 30,
+    "click_rate": 0.375
+  }
+]
+```
 
 ## 发布中心 API
 
@@ -662,6 +790,36 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
 ### `POST /api/publish/jobs/{job_id}/retry`
 
 重试失败发布单中的失败条目。
+
+### `GET /api/publish/jobs/{job_id}/analytics`
+
+发布单维度回流统计。需要 `role=admin` 的 Bearer token。
+
+返回该发布单涵盖剧集的汇总及分集曝光、点击、忽略和点击率。时间范围为发布单创建时间之后的所有互动日志，隔离不同发布批次的回流数据。
+
+响应 `data`：
+
+```json
+{
+  "job_id": 1,
+  "total": {
+    "impressions": 200,
+    "clicks": 80,
+    "ignores": 40,
+    "click_rate": 0.4
+  },
+  "by_episode": [
+    {
+      "episode_id": 1,
+      "title": "第 1 集",
+      "impressions": 120,
+      "clicks": 50,
+      "ignores": 25,
+      "click_rate": 0.4167
+    }
+  ]
+}
+```
 
 ### `POST /api/publish/items/{episode_id}/config`
 
@@ -770,6 +928,9 @@ AI 分析列表聚合接口。需要 `admin` 或 `uploader` Bearer token。`admi
   "action_type": "click",
   "action_value": "反转了",
   "watch_time": 9.5,
-  "idempotency_key": "anonymous_550e8400_1_click_202605241230"
+  "idempotency_key": "anonymous_550e8400_1_click_202605241230",
+  "play_session_id": "session_1718027800000000"
 }
 ```
+
+`play_session_id` 为可选字段，由 Flutter 播放端每次进入播放页生成（`session_{microsecondsSinceEpoch}`），同一播放过程的所有 `impression`、`click`、`ignore` 共享同一值，用于会话级行为聚合分析。旧版客户端不传时后端自动置 `null`，不影响幂等校验。

@@ -12,18 +12,25 @@ JOB_TYPES = {"ai_analyze", "ocr_import"}
 JOB_STATUSES = {"pending", "running", "success", "failed", "canceled"}
 PUBLISH_CHANNELS = {"android"}
 PUBLISH_STATUSES = {"pending", "publishing", "success", "failed", "canceled"}
+ASSET_STATUSES = {"draft", "ready", "incomplete"}
 
 
 class DramaCreate(BaseModel):
     title: str
     description: str = ""
     cover_url: str = ""
+    wide_cover_url: str = ""
+    categories: list[str] = Field(default_factory=list)
+    cast_tags: list[str] = Field(default_factory=list)
 
 
 class DramaUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     cover_url: Optional[str] = None
+    wide_cover_url: Optional[str] = None
+    categories: Optional[list[str]] = None
+    cast_tags: Optional[list[str]] = None
     status: Optional[str] = None
 
 
@@ -32,6 +39,8 @@ class DramaOut(DramaCreate):
 
     id: int
     status: str
+    created_at: datetime
+    updated_at: datetime
     episode_count: int = 0
     pending_episode_count: int = 0
     processing_episode_count: int = 0
@@ -45,9 +54,16 @@ class EpisodeCreate(BaseModel):
     episode_no: int = 1
     title: str
     video_url: str
+    video_original_name: str = ""
     subtitle_url: str = ""
+    subtitle_original_name: str = ""
     subtitle_content: str = ""
     duration: float = 0
+    asset_status: str = "draft"
+    video_width: int = 0
+    video_height: int = 0
+    video_file_size: int = 0
+    video_mime_type: str = ""
 
 
 class EpisodeUpdate(BaseModel):
@@ -55,9 +71,16 @@ class EpisodeUpdate(BaseModel):
     episode_no: Optional[int] = None
     title: Optional[str] = None
     video_url: Optional[str] = None
+    video_original_name: Optional[str] = None
     subtitle_url: Optional[str] = None
+    subtitle_original_name: Optional[str] = None
     subtitle_content: Optional[str] = None
     duration: Optional[float] = None
+    asset_status: Optional[str] = None
+    video_width: Optional[int] = None
+    video_height: Optional[int] = None
+    video_file_size: Optional[int] = None
+    video_mime_type: Optional[str] = None
 
 
 class EpisodeOut(EpisodeCreate):
@@ -65,6 +88,8 @@ class EpisodeOut(EpisodeCreate):
 
     id: int
     owner_user_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
     analyze_status: str
     analyze_error: str = ""
     draft_highlight_count: int = 0
@@ -172,18 +197,15 @@ class AuthTokenOut(BaseModel):
     token_type: str = "Bearer"
     expires_in: int
     user: AuthUserOut
-    # Keep the original flat fields so existing mobile upload code can
-    # continue reading the response during the admin auth transition.
-    user_id: int
-    username: str
-    role: str
 
 
-class UploadEpisodeOut(BaseModel):
-    drama_id: int
-    episode_id: int
-    video_url: str
-    has_subtitle: bool
+class AssetFileOut(BaseModel):
+    asset_type: str
+    url: str
+    path: str
+    file_size: int
+    mime_type: str = ""
+    metadata: dict = Field(default_factory=dict)
 
 
 class HighlightUpdate(BaseModel):
@@ -281,6 +303,8 @@ class InteractionCreate(BaseModel):
     action_value: str = ""
     watch_time: float = 0
     idempotency_key: str
+    # 每次进入播放页由移动端生成，同一播放会话共享同一值；旧客户端不传时为 None
+    play_session_id: Optional[str] = None
 
 
 class HighlightStatsOut(BaseModel):
@@ -370,8 +394,8 @@ class PublishJobOut(BaseModel):
 
 
 class SystemSettingsUpdate(BaseModel):
-    ai: dict = Field(default_factory=dict)
-    review: dict = Field(default_factory=dict)
-    player: dict = Field(default_factory=dict)
-    upload: dict = Field(default_factory=dict)
-    security: dict = Field(default_factory=dict)
+    model_config = ConfigDict(extra="forbid")
+
+
+class PromptTemplateUpdate(BaseModel):
+    content: str = Field(min_length=20, max_length=20000)

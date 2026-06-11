@@ -13,16 +13,8 @@ ALLOWED_EFFECTS = {"anger_bar", "screen_flash", "heart_rain", "boom_effect", "co
 ALLOWED_TYPES = {"conflict", "reversal", "sweet", "satisfying", "suspense"}
 
 
-class LLMNotConfigured(RuntimeError):
-    pass
-
-
 class LLMResponseError(RuntimeError):
     pass
-
-
-def is_llm_configured() -> bool:
-    return bool(os.getenv("LLM_API_KEY"))
 
 
 def _load_prompt_template() -> str:
@@ -82,7 +74,7 @@ def _normalize_highlight(item: dict[str, Any]) -> dict[str, Any]:
 def analyze_with_llm(subtitle_payload: str) -> dict[str, list[dict[str, Any]]]:
     api_key = os.getenv("LLM_API_KEY")
     if not api_key:
-        raise LLMNotConfigured("LLM_API_KEY is not configured")
+        raise RuntimeError("LLM_API_KEY is not configured; AI analysis requires a valid API key")
 
     base_url = os.getenv("LLM_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     model = os.getenv("LLM_MODEL", DEFAULT_MODEL)

@@ -54,6 +54,8 @@ def _latest_jobs_by_episode(db: Session, episode_ids: list[int]) -> dict[int, Jo
 def _asset_status(episode: Episode, draft_count: int, published_count: int) -> str:
     if not episode.video_url or not (episode.subtitle_content or episode.subtitle_url):
         return "incomplete"
+    if episode.asset_status in {"ready", "incomplete"}:
+        return episode.asset_status
     if draft_count or published_count or episode.analyze_status == "success":
         return "ready"
     return "draft"
@@ -88,7 +90,7 @@ def analysis_queue(
     for episode, drama in rows:
         counts = highlight_counts.get(episode.id, {})
         latest_job = latest_jobs.get(episode.id)
-        updated_at = latest_job.updated_at if latest_job else episode.created_at
+        updated_at = latest_job.updated_at if latest_job else episode.updated_at
         result.append(
             AnalysisQueueItemOut(
                 id=episode.id,

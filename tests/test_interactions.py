@@ -109,7 +109,7 @@ def test_interaction_accepts_token_bound_user_id(
     highlight = _published_highlight(db_session, demo_episode)
     register = client.post("/api/auth/register", json={"username": "player-user", "password": "secret123"})
     assert register.status_code == 200
-    user_id = f"user_{register.json()['data']['user_id']}"
+    user_id = f"user_{register.json()['data']['user']['id']}"
     token = register.json()["data"]["access_token"]
 
     response = client.post(

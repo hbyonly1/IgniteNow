@@ -1,77 +1,29 @@
-from typing import Optional
+"""移动端上传接口已下线。
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from sqlalchemy.orm import Session
+按 BACKEND_MOBILE_INTEGRATION_PLAN.md §5 决定，`POST /api/uploads/episodes`
+已确定删除，内容上传统一由管理后台负责（`/api/admin/assets/files` 和
+`/api/dramas/{drama_id}/episodes/upload`）。
 
-from ..database import get_db
-from ..models import Drama, Episode, UserAccount
-from ..schemas import UploadEpisodeOut
-from ..services.auth_service import require_user
-from ..services.upload_service import save_subtitle_file, save_video_file
-from ..services.video_service import player_video_url
-from .common import ok
+本文件保留路由前缀占位，所有请求返回 410 Gone，便于调用方发现接口已废弃。
+"""
+
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/uploads")
 
 
-@router.post("/episodes")
-async def upload_episode(
-    request: Request,
-    drama_id: Optional[int] = Form(default=None),
-    drama_title: Optional[str] = Form(default=None),
-    drama_description: str = Form(default=""),
-    episode_no: int = Form(...),
-    episode_title: str = Form(...),
-    duration: float = Form(default=0),
-    subtitle_content: str = Form(default=""),
-    video_file: UploadFile = File(...),
-    subtitle_file: Optional[UploadFile] = File(default=None),
-    user: UserAccount = Depends(require_user),
-    db: Session = Depends(get_db),
-):
-    if episode_no < 1:
-        raise HTTPException(status_code=400, detail="episode_no must be greater than 0")
-    if not episode_title.strip():
-        raise HTTPException(status_code=400, detail="episode_title is required")
-
-    if drama_id:
-        drama = db.get(Drama, drama_id)
-        if not drama:
-            raise HTTPException(status_code=404, detail="drama not found")
-    else:
-        if not drama_title or not drama_title.strip():
-            raise HTTPException(status_code=400, detail="drama_title is required when drama_id is omitted")
-        drama = Drama(title=drama_title.strip(), description=drama_description.strip())
-        db.add(drama)
-        db.flush()
-
-    video_path = await save_video_file(video_file)
-    subtitle_text = subtitle_content.strip()
-    subtitle_url = ""
-    if subtitle_file:
-        subtitle_path, subtitle_text = await save_subtitle_file(subtitle_file)
-        subtitle_url = str(subtitle_path)
-
-    episode = Episode(
-        drama_id=drama.id,
-        episode_no=episode_no,
-        title=episode_title.strip(),
-        owner_user_id=user.id,
-        video_url=str(video_path),
-        subtitle_url=subtitle_url,
-        subtitle_content=subtitle_text,
-        duration=duration,
-    )
-    db.add(episode)
-    db.commit()
-    db.refresh(episode)
-
-    return ok(
-        UploadEpisodeOut(
-            drama_id=drama.id,
-            episode_id=episode.id,
-            video_url=player_video_url(episode, request),
-            has_subtitle=bool(episode.subtitle_content or episode.subtitle_url),
-        ).model_dump(),
-        "episode uploaded",
+@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def uploads_gone(path: str):
+    """移动端上传接口已下线，请使用管理后台上传功能。"""
+    return JSONResponse(
+        status_code=410,
+        content={
+            "ok": False,
+            "detail": (
+                "POST /api/uploads/episodes 已下线。"
+                "内容上传请使用管理后台接口：POST /api/admin/assets/files 和 "
+                "POST /api/dramas/{drama_id}/episodes/upload。"
+            ),
+        },
     )

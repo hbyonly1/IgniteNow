@@ -7,6 +7,8 @@ import {
   InputNumber,
   Modal,
   Pagination,
+  Popconfirm,
+  Progress,
   Switch,
   Table,
   Tag,
@@ -29,6 +31,7 @@ import {
 } from '@ant-design/icons';
 import { getAdminUserRole } from '../../auth.js';
 import { apiClient, apiErrorMessage } from '../../services/apiClient.js';
+import EpisodeBatchUploader from '../../components/EpisodeBatchUploader.jsx';
 
 const { TextArea } = Input;
 
@@ -76,6 +79,34 @@ function formatDuration(value) {
   const minutes = Math.floor(seconds / 60);
   const remain = Math.round(seconds % 60);
   return `${String(minutes).padStart(2, '0')}:${String(remain).padStart(2, '0')}`;
+}
+
+function formatFileSize(value) {
+  const size = Number(value ?? 0);
+  if (!size) {
+    return '-';
+  }
+  if (size >= 1024 * 1024 * 1024) {
+    return `${(size / 1024 / 1024 / 1024).toFixed(2)}GB`;
+  }
+  if (size >= 1024 * 1024) {
+    return `${(size / 1024 / 1024).toFixed(2)}MB`;
+  }
+  return `${Math.ceil(size / 1024)}KB`;
+}
+
+function getUploadAssetAction(fileList) {
+  const item = fileList[0];
+  if (!item) return { action: 'delete' };
+  if (item.originFileObj) return { action: 'upload', file: item.originFileObj };
+  if (item instanceof window.File) return { action: 'upload', file: item };
+  return { action: 'keep', url: item.url };
+}
+
+function extractFilenameFromUrl(url) {
+  if (!url) return '';
+  const parts = url.split('/');
+  return parts[parts.length - 1] || '未命名文件';
 }
 
 function analysisStatusMeta(status) {
@@ -131,7 +162,20 @@ export default function DramasPage() {
   const [episodeCurrentPage, setEpisodeCurrentPage] = useState(1);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState(null);
   const [selectedEpisodeRowKeys, setSelectedEpisodeRowKeys] = useState([]);
+  const [coverFileList, setCoverFileList] = useState([]);
+  const [wideCoverFileList, setWideCoverFileList] = useState([]);
+  const [dramaBatchPairs, setDramaBatchPairs] = useState([]);
   const [dramaForm] = Form.useForm();
+
+  const watchedCoverUrl = Form.useWatch('cover_url', dramaForm);
+  const watchedWideCoverUrl = Form.useWatch('wide_cover_url', dramaForm);
+
+  const [episodeModalOpen, setEpisodeModalOpen] = useState(false);
+  const [episodeModalMode, setEpisodeModalMode] = useState('create');
+  const [episodeSubmitting, setEpisodeSubmitting] = useState(false);
+  const [episodeBatchPairs, setEpisodeBatchPairs] = useState([]);
+  const [episodeForm] = Form.useForm();
+  const [uploadProgress, setUploadProgress] = useState(null);
 
   const filteredDramas = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -216,59 +260,409 @@ export default function DramasPage() {
 
   const openDramaModal = (drama = null) => {
     setEditingDrama(drama);
-    dramaForm.setFieldsValue(
-      drama
-        ? {
-            title: drama.title,
-            description: drama.description,
-            cover_url: drama.cover_url,
-            episode_count_hint: drama.episode_count ?? 24,
-            categories: ['都市', '情感', '逆袭'],
-            keywords: ['总裁', '闪婚', '反转'],
-            initial_status: 'draft',
-            auto_timeline: true,
-            auto_highlight: true,
-            generate_suggestion: true,
-            analyze_after_upload: true,
-          }
-        : {
-            title: '',
-            description: '',
-            cover_url: '',
-            episode_count_hint: 24,
-            categories: ['都市', '情感', '逆袭'],
-            keywords: ['总裁', '闪婚', '反转'],
-            initial_status: 'draft',
-            auto_timeline: true,
-            auto_highlight: true,
-            generate_suggestion: true,
-            analyze_after_upload: true,
-          },
-    );
+    if (drama?.cover_url) {
+      setCoverFileList([{ uid: '-1', name: '现有竖版封面', status: 'done', url: drama.cover_url }]);
+    } else {
+      setCoverFileList([]);
+    }
+    if (drama?.wide_cover_url) {
+      setWideCoverFileList([{ uid: '-2', name: '现有横版封面', status: 'done', url: drama.wide_cover_url }]);
+    } else {
+      setWideCoverFileList([]);
+    }
+    setDramaBatchPairs([]);
+    setUploadProgress(null);
     setDramaModalOpen(true);
+  };
+
+  const dramaInitialValues = useMemo(() => {
+    return editingDrama
+      ? {
+        title: editingDrama.title,
+        description: editingDrama.description,
+        cover_url: editingDrama.cover_url,
+        wide_cover_url: editingDrama.wide_cover_url,
+        episode_count_hint: editingDrama.episode_count ?? undefined,
+        categories: editingDrama.categories ?? [],
+        keywords: editingDrama.cast_tags ?? [],
+        initial_status: 'draft',
+        auto_timeline: true,
+        auto_highlight: true,
+        generate_suggestion: true,
+        analyze_after_upload: true,
+      }
+      : {
+        title: '',
+        description: '',
+        cover_url: '',
+        wide_cover_url: '',
+        episode_count_hint: undefined,
+        categories: [],
+        keywords: [],
+        initial_status: 'draft',
+        auto_timeline: true,
+        auto_highlight: true,
+        generate_suggestion: true,
+        analyze_after_upload: true,
+      };
+  }, [editingDrama]);
+
+  useEffect(() => {
+    if (dramaModalOpen) {
+      window.setTimeout(() => {
+        dramaForm.resetFields();
+        dramaForm.setFieldsValue(dramaInitialValues);
+      }, 0);
+    }
+  }, [dramaModalOpen, dramaInitialValues, dramaForm]);
+
+  const closeDramaModal = () => {
+    if (uploadProgress) {
+      message.warning('正在上传中，请稍后再试');
+      return;
+    }
+    setDramaModalOpen(false);
+    setCoverFileList([]);
+    setWideCoverFileList([]);
+    setDramaBatchPairs([]);
+  };
+
+  const uploadAssetFile = async (assetType, file) => {
+    const formData = new window.FormData();
+    formData.append('asset_type', assetType);
+    formData.append('file', file);
+    const response = await apiClient.post('/api/admin/assets/files', formData);
+    return response.data.data;
+  };
+
+  const uploadDramaEpisode = async (dramaId, values, videoFile, subtitleFile, episodeNo = 1) => {
+    const formData = new window.FormData();
+    formData.append('episode_no', String(episodeNo));
+    formData.append('episode_title', values.episode_title ?? `${values.title} 第 ${episodeNo} 集`);
+    formData.append('video_file', videoFile);
+    if (subtitleFile) {
+      formData.append('subtitle_file', subtitleFile);
+    }
+    const response = await apiClient.post(`/api/dramas/${dramaId}/episodes/upload`, formData);
+    return response.data.data;
+  };
+
+  const enqueueAnalysisJob = async (episodeId) => {
+    await apiClient.post('/api/system/jobs', {
+      type: 'ai_analyze',
+      payload: { episode_id: episodeId, force_reanalyze: false },
+    });
+  };
+
+  const readTextFile = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new window.FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ''));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(file, 'utf-8');
+    });
+
+  const openEpisodeModal = () => {
+    if (!managingDrama) {
+      return;
+    }
+    setEpisodeModalMode('batch');
+
+    // Pre-fill existing episodes so they show up in the batch uploader
+    const existingPairs = episodes.map(ep => ({
+      id: ep.id,
+      episodeNo: ep.episode_no,
+      videoFile: ep.video_url ? { name: ep.video_original_name || extractFilenameFromUrl(ep.video_url), url: ep.video_url, isExisting: true } : null,
+      subtitleFile: ep.subtitle_url ? { name: ep.subtitle_original_name || extractFilenameFromUrl(ep.subtitle_url), url: ep.subtitle_url, isExisting: true } : null,
+      isExistingEpisode: true,
+      originalData: ep,
+    })).sort((a, b) => a.episodeNo - b.episodeNo);
+    setEpisodeBatchPairs(existingPairs);
+
+    setUploadProgress(null);
+    setEpisodeModalOpen(true);
+  };
+
+  const episodeInitialValues = useMemo(() => {
+    return {
+      episode_no: episodeModalMode === 'create' ? Math.max(0, ...episodes.map((item) => Number(item.episode_no) || 0)) + 1 : selectedEpisode?.episode_no,
+      episode_title: episodeModalMode === 'create' ? '' : selectedEpisode?.title,
+      analyze_after_upload: episodeModalMode === 'create',
+    };
+  }, [episodeModalMode, episodes, selectedEpisode]);
+
+  useEffect(() => {
+    if (episodeModalOpen) {
+      window.setTimeout(() => {
+        episodeForm.resetFields();
+        episodeForm.setFieldsValue(episodeInitialValues);
+      }, 0);
+    }
+  }, [episodeModalOpen, episodeInitialValues, episodeForm]);
+
+  const closeEpisodeModal = () => {
+    if (uploadProgress) {
+      message.warning('正在上传中，请稍后再试');
+      return;
+    }
+    setEpisodeModalOpen(false);
+    setEpisodeBatchPairs([]);
+  };
+
+  const refreshManagingEpisodes = async (preferredEpisodeId = null) => {
+    if (!managingDrama) {
+      return;
+    }
+    await loadEpisodes(managingDrama);
+    if (preferredEpisodeId) {
+      setSelectedEpisodeId(preferredEpisodeId);
+    }
+    await loadDramas();
+  };
+
+  const submitEpisodeAsset = async (values) => {
+    if (!managingDrama) {
+      return;
+    }
+
+    if (episodeBatchPairs.length === 0) {
+      return message.error('无可处理项');
+    }
+
+    const invalidPairs = episodeBatchPairs.filter(p => !p.isExistingEpisode && !p.videoFile);
+    if (invalidPairs.length > 0) {
+      return message.error('新增集数中存在未匹配视频的项，请补全视频或将其移除');
+    }
+
+    setEpisodeSubmitting(true);
+    let successCount = 0;
+    let failCount = 0;
+    try {
+      for (let i = 0; i < episodeBatchPairs.length; i++) {
+        const pair = episodeBatchPairs[i];
+
+        // Check if existing episode needs updates
+        if (pair.isExistingEpisode) {
+          const videoAction = getUploadAssetAction([pair.videoFile]);
+          const subtitleAction = getUploadAssetAction([pair.subtitleFile]);
+
+          if (videoAction.action === 'keep' && subtitleAction.action === 'keep') {
+            // Nothing changed for this existing episode
+            continue;
+          }
+
+          setUploadProgress({
+            total: episodeBatchPairs.length,
+            current: i + 1,
+            filename: `第 ${pair.episodeNo} 集更新`,
+          });
+
+          try {
+            const updates = {};
+            if (videoAction.action === 'upload') {
+              const asset = await uploadAssetFile('video', videoAction.file);
+              updates.video_url = asset.path;
+              updates.video_original_name = videoAction.file.name || '';
+              updates.duration = asset.metadata?.duration ?? pair.originalData.duration;
+              updates.video_width = asset.metadata?.width ?? 0;
+              updates.video_height = asset.metadata?.height ?? 0;
+              updates.video_file_size = asset.metadata?.file_size ?? asset.file_size ?? 0;
+              updates.video_mime_type = asset.metadata?.mime_type ?? asset.mime_type ?? '';
+            } else if (videoAction.action === 'delete') {
+              updates.video_url = '';
+              updates.video_original_name = '';
+            }
+
+            if (subtitleAction.action === 'upload') {
+              const [asset, subtitleText] = await Promise.all([
+                uploadAssetFile('subtitle', subtitleAction.file),
+                readTextFile(subtitleAction.file),
+              ]);
+              updates.subtitle_url = asset.path;
+              updates.subtitle_original_name = subtitleAction.file.name || '';
+              updates.subtitle_content = subtitleText;
+            } else if (subtitleAction.action === 'delete') {
+              updates.subtitle_url = '';
+              updates.subtitle_original_name = '';
+              updates.subtitle_content = '';
+            }
+
+            if (Object.keys(updates).length > 0) {
+              const finalVideoUrl = updates.video_url !== undefined ? updates.video_url : pair.originalData.video_url;
+              const finalSubtitleUrl = updates.subtitle_url !== undefined ? updates.subtitle_url : pair.originalData.subtitle_url;
+              updates.asset_status = (finalVideoUrl && finalSubtitleUrl) ? 'ready' : 'incomplete';
+
+              await apiClient.put(`/api/episodes/${pair.id}`, updates);
+            }
+            successCount++;
+          } catch (e) {
+            failCount++;
+            message.error(`更新第 ${pair.episodeNo} 集失败: ${e.response?.data?.detail || e.message}`);
+          }
+        } else {
+          // New episode
+          setUploadProgress({
+            total: episodeBatchPairs.length,
+            current: i + 1,
+            filename: `第 ${pair.episodeNo} 集上传`,
+          });
+
+          try {
+            const episode = await uploadDramaEpisode(
+              managingDrama.id,
+              { episode_title: `${managingDrama.title} 第 ${pair.episodeNo} 集` },
+              pair.videoFile,
+              pair.subtitleFile,
+              pair.episodeNo
+            );
+            if (values.analyze_after_upload) {
+              await enqueueAnalysisJob(episode.id);
+            }
+            successCount++;
+          } catch (e) {
+            failCount++;
+            message.error(`上传第 ${pair.episodeNo} 集失败: ${e.response?.data?.detail || e.message}`);
+          }
+        }
+      }
+
+      if (failCount > 0) {
+        message.warning(`处理完毕：成功 ${successCount} 集，失败 ${failCount} 集`);
+      } else if (successCount > 0) {
+        message.success(`成功处理 ${successCount} 集`);
+        closeEpisodeModal();
+      } else {
+        closeEpisodeModal(); // nothing changed, just closed
+      }
+
+      await refreshManagingEpisodes();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '批量处理过程出现异常'));
+    } finally {
+      setEpisodeSubmitting(false);
+      setUploadProgress(null);
+    }
   };
 
   const submitDrama = async (values) => {
     setSubmitting(true);
     try {
+      const coverAction = getUploadAssetAction(coverFileList);
+      const wideCoverAction = getUploadAssetAction(wideCoverFileList);
+
+      let coverUrl = editingDrama?.cover_url ?? '';
+      let wideCoverUrl = editingDrama?.wide_cover_url ?? '';
+
+      if (coverAction.action === 'upload') {
+        const asset = await uploadAssetFile('cover', coverAction.file);
+        coverUrl = asset.url;
+      } else if (coverAction.action === 'delete') {
+        coverUrl = '';
+      }
+
+      if (wideCoverAction.action === 'upload') {
+        const asset = await uploadAssetFile('wide_cover', wideCoverAction.file);
+        wideCoverUrl = asset.url;
+      } else if (wideCoverAction.action === 'delete') {
+        wideCoverUrl = '';
+      }
+
       const payload = {
         title: values.title,
         description: values.description ?? '',
-        cover_url: values.cover_url ?? '',
+        cover_url: coverUrl,
+        wide_cover_url: wideCoverUrl,
+        categories: values.categories ?? [],
+        cast_tags: values.keywords ?? [],
       };
+      let dramaId = editingDrama?.id;
       if (editingDrama) {
         await apiClient.put(`/api/dramas/${editingDrama.id}`, payload);
         message.success('短剧已更新');
       } else {
-        await apiClient.post('/api/dramas', payload);
+        const response = await apiClient.post('/api/dramas', payload);
+        dramaId = response.data.data.id;
         message.success('短剧已创建');
       }
-      setDramaModalOpen(false);
+
+      // Batch upload episodes
+      if (dramaBatchPairs.length > 0 && dramaId) {
+        const validPairs = dramaBatchPairs.filter(p => p.videoFile);
+        if (dramaBatchPairs.length > validPairs.length) {
+          message.warning('跳过部分未包含视频的文件对');
+        }
+
+        let successCount = 0;
+        let failCount = 0;
+        for (let i = 0; i < validPairs.length; i++) {
+          const pair = validPairs[i];
+          setUploadProgress({
+            total: validPairs.length,
+            current: i + 1,
+            filename: pair.videoFile.name,
+          });
+          try {
+            const episode = await uploadDramaEpisode(
+              dramaId,
+              { episode_title: `${values.title} 第 ${pair.episodeNo} 集` },
+              pair.videoFile,
+              pair.subtitleFile,
+              pair.episodeNo
+            );
+            if (values.analyze_after_upload) {
+              await enqueueAnalysisJob(episode.id);
+            }
+            successCount++;
+          } catch (e) {
+            failCount++;
+            message.error(`上传第 ${pair.episodeNo} 集失败: ${e.response?.data?.detail || e.message}`);
+          }
+        }
+        if (validPairs.length > 0) {
+          if (failCount > 0) {
+            message.error(`素材批量上传结束：成功 ${successCount} 集，失败 ${failCount} 集`);
+          } else {
+            message.success(`素材批量上传结束：成功 ${successCount} 集`);
+          }
+        }
+      }
+
+      closeDramaModal();
       await loadDramas();
+      if (managingDrama && managingDrama.id === dramaId) {
+        await loadEpisodes(managingDrama);
+      }
     } catch (error) {
       message.error(apiErrorMessage(error, '短剧保存失败'));
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
+    }
+  };
+
+  const handleDeleteDrama = async (dramaId) => {
+    try {
+      await apiClient.delete(`/api/dramas/${dramaId}`);
+      message.success('短剧已删除');
+      if (managingDrama?.id === dramaId) {
+        setManagingDrama(null);
+      }
+      await loadDramas();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '删除短剧失败'));
+    }
+  };
+
+  const handleDeleteEpisode = async (episodeId) => {
+    try {
+      await apiClient.delete(`/api/episodes/${episodeId}`);
+      message.success('剧集已删除');
+      if (selectedEpisodeId === episodeId) {
+        setSelectedEpisodeId(null);
+      }
+      await refreshManagingEpisodes();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '删除剧集失败'));
     }
   };
 
@@ -280,7 +674,7 @@ export default function DramasPage() {
     {
       title: '剧集名称',
       dataIndex: 'title',
-      width: '30%',
+      width: '28%',
       render: (_, record) => (
         <div className="drama-list-title">
           <span className="drama-list-cover">
@@ -296,13 +690,13 @@ export default function DramasPage() {
     {
       title: '集数',
       dataIndex: 'episode_count',
-      width: '12%',
+      width: '10%',
       render: (value) => `${value ?? 0} 集`,
     },
     {
       title: '状态',
       key: 'status',
-      width: '16%',
+      width: '14%',
       render: (_, record) => {
         const risk = dramaRisk(record);
         return (
@@ -315,19 +709,19 @@ export default function DramasPage() {
     {
       title: '最后更新时间',
       key: 'updated_at',
-      width: '20%',
+      width: '18%',
       render: (_, record) => formatDateTime(record.updated_at ?? record.created_at),
     },
     {
       title: '操作',
       key: 'actions',
-      width: '22%',
+      width: '26%',
       align: 'right',
       className: 'drama-list-action-column',
       render: (_, record) => {
         const stop = (event) => event.stopPropagation();
         return (
-          <div className="drama-list-actions" onClick={stop}>
+          <div className="drama-list-actions" onClick={stop} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             {isAdmin ? (
               <Button
                 type="link"
@@ -344,6 +738,24 @@ export default function DramasPage() {
             >
               管理剧集
             </Button>
+            {isAdmin ? (
+              <Popconfirm
+                title="确认删除该短剧？"
+                description="将同时删除所有剧集和高光点，此操作不可恢复。"
+                okText="确认删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => handleDeleteDrama(record.id)}
+              >
+                <Button
+                  danger
+                  type="default"
+                  className="drama-list-delete-action"
+                  icon={<DeleteOutlined />}
+                  title="删除短剧"
+                />
+              </Popconfirm>
+            ) : null}
           </div>
         );
       },
@@ -354,7 +766,7 @@ export default function DramasPage() {
     {
       title: '剧集',
       dataIndex: 'episode_no',
-      width: '26%',
+      width: 200,
       render: (_, record) => (
         <div className="episode-list-title">
           <span className="episode-list-cover">
@@ -370,7 +782,7 @@ export default function DramasPage() {
     {
       title: '字幕状态',
       key: 'subtitle',
-      width: '16%',
+      width: 90,
       render: (_, record) => (
         <Tag className="drama-list-status" color={hasSubtitle(record) ? 'success' : 'warning'}>
           {hasSubtitle(record) ? '已识别' : '待识别'}
@@ -380,7 +792,7 @@ export default function DramasPage() {
     {
       title: 'AI分析状态',
       dataIndex: 'analyze_status',
-      width: '18%',
+      width: 110,
       render: (value) => {
         const meta = analysisStatusMeta(value);
         return (
@@ -393,7 +805,7 @@ export default function DramasPage() {
     {
       title: '发布状态',
       key: 'publish_status',
-      width: '16%',
+      width: 90,
       render: (_, record) => {
         const meta = publishStatusMeta(record);
         return (
@@ -406,8 +818,26 @@ export default function DramasPage() {
     {
       title: '更新时间',
       key: 'created_at',
-      width: '14%',
+      width: 160,
       render: (_, record) => formatDateTime(record.updated_at ?? record.created_at),
+    },
+    {
+      title: '',
+      key: 'delete',
+      width: 60,
+      align: 'center',
+      render: (_, record) => (
+        <Popconfirm
+          title="确认删除该剧集？"
+          description="将同时删除所有高光点，此操作不可恢复。"
+          okText="确认删除"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+          onConfirm={() => handleDeleteEpisode(record.id)}
+        >
+          <Button danger type="default" className="drama-list-delete-action" icon={<DeleteOutlined />} title="删除剧集" />
+        </Popconfirm>
+      ),
     },
   ];
 
@@ -434,7 +864,7 @@ export default function DramasPage() {
               <Button icon={<UploadOutlined />} onClick={() => message.info('批量导入接口待接入')}>
                 批量导入
               </Button>
-              <Button type="primary" className="content-upload-action" icon={<PlusOutlined />} onClick={() => message.info('新建剧集接口待接入')}>
+              <Button type="primary" className="content-upload-action" icon={<PlusOutlined />} onClick={() => openEpisodeModal()}>
                 新增剧集
               </Button>
             </div>
@@ -473,6 +903,7 @@ export default function DramasPage() {
                 style={{ width: '100%', minWidth: '100%' }}
                 rowKey="id"
                 tableLayout="fixed"
+                scroll={{ x: 710 }}
                 loading={episodeLoading}
                 columns={episodeColumns}
                 dataSource={pagedEpisodes}
@@ -504,8 +935,7 @@ export default function DramasPage() {
                 <h3>快速操作</h3>
                 <div className="episode-quick-actions">
                   <Button type="primary" icon={<PlayCircleOutlined />}>进入编辑短剧</Button>
-                  <Button icon={<UploadOutlined />}>替换视频</Button>
-                  <Button icon={<FileTextOutlined />}>管理字幕</Button>
+                  <Button icon={<UploadOutlined />} onClick={() => openEpisodeModal()}>管理视频和字幕</Button>
                 </div>
               </div>
               <div className="episode-detail-card">
@@ -538,54 +968,54 @@ export default function DramasPage() {
         </section>
       ) : (
         <section className="content-management">
-        <div className="content-page-header">
-          <div className="content-page-title">
-            <h1>内容管理</h1>
-            <p>管理短剧资产、剧集配置、字幕输入和 AI 分析状态</p>
+          <div className="content-page-header">
+            <div className="content-page-title">
+              <h1>内容管理</h1>
+              <p>管理短剧资产、剧集配置、字幕输入和 AI 分析状态</p>
+            </div>
+            <div className="content-toolbar">
+              <Input
+                className="content-search"
+                allowClear
+                suffix={<SearchOutlined />}
+                placeholder="搜索短剧名称或关键词"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+              {isAdmin ? (
+                <Button type="primary" className="content-upload-action" icon={<CloudUploadOutlined />} onClick={() => openDramaModal()}>
+                  上传短剧
+                </Button>
+              ) : null}
+            </div>
           </div>
-          <div className="content-toolbar">
-            <Input
-              className="content-search"
-              allowClear
-              suffix={<SearchOutlined />}
-              placeholder="搜索短剧名称或关键词"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setCurrentPage(1);
-              }}
-            />
-            {isAdmin ? (
-              <Button type="primary" className="content-upload-action" icon={<CloudUploadOutlined />} onClick={() => openDramaModal()}>
-                上传短剧
-              </Button>
-            ) : null}
-          </div>
-        </div>
 
-        <div className="drama-list-panel">
-          <Table
-            className="drama-content-table"
-            style={{ width: '100%', minWidth: '100%' }}
-            rowKey="id"
-            tableLayout="fixed"
-            loading={loading}
-            columns={dramaColumns}
-            dataSource={pagedDramas}
-            locale={{ emptyText: <Empty description={loading ? '加载中' : '暂无内容'} /> }}
-            pagination={false}
-          />
-          <div className="drama-list-pagination">
-            <span>共 {filteredDramas.length} 条</span>
-            <Pagination
-              current={effectivePage}
-              pageSize={pageSize}
-              total={filteredDramas.length}
-              showSizeChanger={false}
-              onChange={setCurrentPage}
+          <div className="drama-list-panel">
+            <Table
+              className="drama-content-table"
+              style={{ width: '100%', minWidth: '100%' }}
+              rowKey="id"
+              tableLayout="fixed"
+              loading={loading}
+              columns={dramaColumns}
+              dataSource={pagedDramas}
+              locale={{ emptyText: <Empty description={loading ? '加载中' : '暂无内容'} /> }}
+              pagination={false}
             />
+            <div className="drama-list-pagination">
+              <span>共 {filteredDramas.length} 条</span>
+              <Pagination
+                current={effectivePage}
+                pageSize={pageSize}
+                total={filteredDramas.length}
+                showSizeChanger={false}
+                onChange={setCurrentPage}
+              />
+            </div>
           </div>
-        </div>
         </section>
       )}
 
@@ -593,10 +1023,11 @@ export default function DramasPage() {
         className="upload-drama-modal"
         title={null}
         open={dramaModalOpen}
-        onCancel={() => setDramaModalOpen(false)}
+        onCancel={closeDramaModal}
         closable={false}
         footer={null}
-        width={920}
+        width={1100}
+        style={{ maxWidth: '95vw', top: 20 }}
         destroyOnHidden
       >
         <div className="upload-drama-header">
@@ -608,24 +1039,120 @@ export default function DramasPage() {
             type="text"
             className="upload-drama-close"
             icon={<CloseOutlined />}
-            onClick={() => setDramaModalOpen(false)}
+            onClick={closeDramaModal}
           />
         </div>
 
-        <Form form={dramaForm} layout="vertical" onFinish={submitDrama} className="upload-drama-form">
+        <Form form={dramaForm} layout="vertical" onFinish={submitDrama} className="upload-drama-form" initialValues={dramaInitialValues}>
+          <Form.Item name="cover_url" hidden><Input /></Form.Item>
+          <Form.Item name="wide_cover_url" hidden><Input /></Form.Item>
           <section className="upload-drama-card upload-drama-basic">
             <div className="upload-cover-panel">
-              <h3>封面设置</h3>
-              <Upload.Dragger className="upload-cover-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
-                <CloudUploadOutlined />
-                <strong>上传封面</strong>
-                <span>建议尺寸 3:4，JPG/PNG</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <h3 style={{ margin: 0 }}>封面设置</h3>
+                {(watchedCoverUrl || coverFileList?.length > 0) && (
+                  <Button
+                    danger
+                    type="default"
+                    icon={<DeleteOutlined />}
+                    title="删除封面"
+                    style={{ padding: '4px 8px', height: 28 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCoverFileList([]);
+                      dramaForm.setFieldsValue({ cover_url: '' });
+                    }}
+                  />
+                )}
+              </div>
+              <Upload.Dragger
+                accept=".jpg,.jpeg,.png,.webp"
+                className="upload-cover-dropzone"
+                beforeUpload={() => false}
+                fileList={coverFileList}
+                maxCount={1}
+                showUploadList={false}
+                onChange={({ fileList }) => setCoverFileList(fileList.slice(-1))}
+              >
+                {(() => {
+                  let preview = watchedCoverUrl;
+                  if (coverFileList?.length > 0) {
+                    const f = coverFileList[0].originFileObj || coverFileList[0];
+                    preview = f.url || window.URL.createObjectURL(f);
+                  }
+                  if (preview) {
+                    return (
+                      <div className="cover-preview-container">
+                        <img src={preview} alt="封面预览" />
+                        <div className="cover-preview-overlay">
+                          <CloudUploadOutlined />
+                          <span>点击替换封面</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <>
+                      <CloudUploadOutlined />
+                      <strong>上传封面</strong>
+                      <span>建议尺寸 3:4，JPG/PNG</span>
+                    </>
+                  );
+                })()}
               </Upload.Dragger>
-              <Form.Item label="短剧横版封面（可选）">
-                <Upload.Dragger className="upload-wide-cover-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
-                  <InboxOutlined />
-                  <strong>上传横版封面</strong>
-                  <span>建议尺寸 16:9，JPG/PNG</span>
+              <Form.Item label={
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <span>短剧横版封面（可选）</span>
+                  {(watchedWideCoverUrl || wideCoverFileList?.length > 0) && (
+                    <Button
+                      danger
+                      type="default"
+                      icon={<DeleteOutlined />}
+                      title="删除横版封面"
+                      style={{ padding: '2px 8px', height: 24, fontSize: 12 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setWideCoverFileList([]);
+                        dramaForm.setFieldsValue({ wide_cover_url: '' });
+                      }}
+                    />
+                  )}
+                </div>
+              } style={{ width: '100%' }}>
+                <Upload.Dragger
+                  accept=".jpg,.jpeg,.png,.webp"
+                  className="upload-wide-cover-dropzone"
+                  beforeUpload={() => false}
+                  fileList={wideCoverFileList}
+                  maxCount={1}
+                  showUploadList={false}
+                  onChange={({ fileList }) => setWideCoverFileList(fileList.slice(-1))}
+                >
+                  {(() => {
+                    let preview = watchedWideCoverUrl;
+                    if (wideCoverFileList?.length > 0) {
+                      const f = wideCoverFileList[0].originFileObj || wideCoverFileList[0];
+                      preview = f.url || window.URL.createObjectURL(f);
+                    }
+                    if (preview) {
+                      return (
+                        <div className="cover-preview-container">
+                          <img src={preview} alt="横版封面预览" />
+                          <div className="cover-preview-overlay">
+                            <CloudUploadOutlined />
+                            <span>点击替换横版封面</span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <>
+                        <InboxOutlined />
+                        <strong>上传横版封面</strong>
+                        <span>建议尺寸 16:9，JPG/PNG</span>
+                      </>
+                    );
+                  })()}
                 </Upload.Dragger>
               </Form.Item>
             </div>
@@ -637,7 +1164,7 @@ export default function DramasPage() {
               <Form.Item label="剧集数量">
                 <div className="episode-count-field">
                   <Form.Item name="episode_count_hint" noStyle>
-                    <InputNumber min={1} precision={0} controls={false} />
+                    <InputNumber min={1} precision={0} controls={false} placeholder="请输入剧集数量" style={{ width: '100%' }} />
                   </Form.Item>
                   <span>集</span>
                 </div>
@@ -660,31 +1187,12 @@ export default function DramasPage() {
           </section>
 
           <section className="upload-drama-card">
-            <h3>素材上传</h3>
-            <div className="upload-assets-grid">
-              <Upload.Dragger className="upload-asset-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
-                <CloudUploadOutlined />
-                <strong>拖拽文件到此处或点击上传</strong>
-                <span>支持 MP4 / MOV，单文件不超过 2GB</span>
-              </Upload.Dragger>
-              <Upload.Dragger className="upload-asset-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
-                <CloudUploadOutlined />
-                <strong>导入 SRT / VTT / TXT</strong>
-                <span>也可稍后在内容管理中补充</span>
-              </Upload.Dragger>
-              <Upload.Dragger className="upload-asset-dropzone" beforeUpload={() => false} maxCount={1} showUploadList={false}>
-                <FileTextOutlined />
-                <strong>批量导入剧集配置</strong>
-                <span>Excel / CSV</span>
-              </Upload.Dragger>
-            </div>
-            <div className="upload-file-chip">
-              <span className="upload-file-icon">▶</span>
-              <strong>第1集_1080p.mp4</strong>
-              <span>1.24GB</span>
-              <em>上传完成</em>
-              <DeleteOutlined />
-            </div>
+            <h3>素材批量上传</h3>
+            <EpisodeBatchUploader
+              pairs={dramaBatchPairs}
+              onChange={setDramaBatchPairs}
+              disabled={submitting}
+            />
           </section>
 
           <section className="upload-drama-card">
@@ -717,10 +1225,83 @@ export default function DramasPage() {
             </div>
           </section>
 
-          <div className="upload-drama-footer">
-            <Button onClick={() => setDramaModalOpen(false)}>取消</Button>
+          <div className="upload-drama-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16 }}>
+            {uploadProgress ? (
+              <div className="upload-progress-info" style={{ flex: 1, textAlign: 'left', fontSize: 13, color: '#666' }}>
+                正在上传 {uploadProgress.filename} ({uploadProgress.current}/{uploadProgress.total})
+                <Progress percent={Math.round((uploadProgress.current / uploadProgress.total) * 100)} size="small" status="active" />
+              </div>
+            ) : null}
+            <Button onClick={closeDramaModal} disabled={submitting}>取消</Button>
             <Button type="primary" htmlType="submit" loading={submitting}>
               完成
+            </Button>
+          </div>
+        </Form>
+      </Modal>
+
+      {/* 剧集素材弹窗 */}
+      <Modal
+        className="upload-drama-modal episode-asset-modal"
+        title={null}
+        open={episodeModalOpen}
+        onCancel={closeEpisodeModal}
+        closable={false}
+        footer={null}
+        width={860}
+        destroyOnHidden
+        styles={{ body: { maxHeight: '80vh', overflowY: 'auto' } }}
+      >
+        <div className="upload-drama-header">
+          <div>
+            <h2>
+              管理剧集素材
+            </h2>
+            <p>{managingDrama ? managingDrama.title : '剧集素材配置'}</p>
+          </div>
+          <Button
+            type="text"
+            className="upload-drama-close"
+            icon={<CloseOutlined />}
+            onClick={closeEpisodeModal}
+          />
+        </div>
+
+        <Form form={episodeForm} layout="vertical" onFinish={submitEpisodeAsset} className="upload-drama-form" initialValues={episodeInitialValues}>
+          {episodeModalMode === 'batch' ? (
+            <section className="upload-drama-card">
+              <div style={{ color: '#888', fontSize: 13, marginBottom: 16 }}>
+                提示：下方列表展示所有剧集，拖拽视频或字幕可自动更新对应集数的素材。
+              </div>
+
+              <EpisodeBatchUploader
+                pairs={episodeBatchPairs}
+                onChange={setEpisodeBatchPairs}
+                disabled={episodeSubmitting}
+                startIndex={Math.max(0, ...episodes.map(e => Number(e.episode_no) || 0)) + 1}
+              />
+
+              <div className="upload-ai-settings" style={{ marginTop: 24 }}>
+                <Form.Item>
+                  <Form.Item name="analyze_after_upload" valuePropName="checked" noStyle>
+                    <Switch checkedChildren="" unCheckedChildren="" />
+                  </Form.Item>
+                  <span>上传后立即开始分析</span>
+                </Form.Item>
+              </div>
+            </section>
+          ) : null}
+
+          <div className="upload-drama-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 16 }}>
+            {uploadProgress ? (
+              <div className="upload-progress-info" style={{ flex: 1, textAlign: 'left', fontSize: 13, color: '#666' }}>
+                正在上传 {uploadProgress.filename} ({uploadProgress.current}/{uploadProgress.total})
+                <Progress percent={Math.round((uploadProgress.current / uploadProgress.total) * 100)} size="small" status="active" />
+              </div>
+            ) : null}
+            <Button onClick={closeEpisodeModal} disabled={episodeSubmitting}>取消</Button>
+            <Button type="primary" htmlType="submit" loading={episodeSubmitting}>
+              保存
             </Button>
           </div>
         </Form>
@@ -730,6 +1311,19 @@ export default function DramasPage() {
 }
 
 const categoryOptions = ['都市', '情感', '逆袭', '悬疑', '甜宠'];
+
+function FileChip({ file, icon, label, onRemove }) {
+  const rawFile = file?.originFileObj ?? file;
+  return (
+    <div className="upload-file-chip">
+      <span className="upload-file-icon">{icon}</span>
+      <strong>{rawFile?.name ?? file?.name ?? '已选择文件'}</strong>
+      <span>{formatFileSize(rawFile?.size ?? file?.size)}</span>
+      <em>{label}</em>
+      <Button type="text" icon={<DeleteOutlined />} onClick={onRemove} />
+    </div>
+  );
+}
 
 function CategoryDropdown({ value = [], onChange, placeholder }) {
   const [open, setOpen] = useState(false);

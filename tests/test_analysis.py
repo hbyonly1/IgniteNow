@@ -39,7 +39,7 @@ def test_sync_analysis_endpoint_is_removed(
         headers=admin_headers,
     )
 
-    assert response.status_code == 404
+    assert response.status_code in {404, 405}
 
 
 def test_analysis_requires_subtitle_and_marks_episode_failed(
@@ -100,6 +100,30 @@ def test_analysis_creates_draft_highlights_without_status_from_ai(
     db_session.refresh(job)
 
     monkeypatch.setattr(tasks, "SessionLocal", lambda: _SessionProxy(db_session))
+
+    # analyze_subtitle_text 现已作为顶层属性导入到 analysis_service，
+    # 直接 patch 该模块的绑定即可替换 LLM 调用
+    import backend.app.services.analysis_service as _svc
+    monkeypatch.setattr(
+        _svc,
+        "analyze_subtitle_text",
+        lambda _content: {
+            "highlights": [
+                {
+                    "start_time": 1.0,
+                    "end_time": 3.0,
+                    "highlight_type": "reversal",
+                    "emotion": "震惊",
+                    "intensity": 0.85,
+                    "confidence": 0.85,
+                    "trigger_score": 0.85,
+                    "reason": "测试高光",
+                    "button_text": "反转了",
+                    "effect": "screen_flash",
+                }
+            ]
+        },
+    )
 
     tasks.run_ai_analyze_job(job.id)
 

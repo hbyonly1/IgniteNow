@@ -31,6 +31,8 @@ class _PlayerPageState extends State<PlayerPage> {
   VideoPlayerController? _videoController;
   Highlight? _activeHighlight;
   String? _userId;
+  /// 本次播放会话 ID，进入播放页时生成，用于关联同一会话的所有互动日志。
+  String? _playSessionId;
   String? _error;
   int _effectKey = 0;
   bool _clickedCurrent = false;
@@ -45,6 +47,8 @@ class _PlayerPageState extends State<PlayerPage> {
   Future<void> _load() async {
     try {
       final userId = await _userService.getUserId();
+      // 进入播放页时生成本次会话 ID
+      final sessionId = _userService.generateSessionId();
       final episode = await _apiClient.fetchPlayerEpisode(widget.episodeId);
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(episode.videoUrl),
@@ -53,6 +57,7 @@ class _PlayerPageState extends State<PlayerPage> {
       controller.addListener(_onTick);
       setState(() {
         _userId = userId;
+        _playSessionId = sessionId;
         _episode = episode;
         _videoController = controller;
       });
@@ -96,6 +101,7 @@ class _PlayerPageState extends State<PlayerPage> {
       highlight: highlight,
       actionType: 'impression',
       watchTime: seconds,
+      playSessionId: _playSessionId,
     );
     Future<void>.delayed(_interactionDisplayDuration, () {
       if (mounted &&
@@ -107,6 +113,7 @@ class _PlayerPageState extends State<PlayerPage> {
           highlight: highlight,
           actionType: 'ignore',
           watchTime: seconds + _interactionDisplayDuration.inSeconds,
+          playSessionId: _playSessionId,
         );
         setState(() => _activeHighlight = null);
       }
@@ -136,6 +143,7 @@ class _PlayerPageState extends State<PlayerPage> {
       highlight: highlight,
       actionType: 'click',
       watchTime: seconds,
+      playSessionId: _playSessionId,
     );
   }
 
@@ -143,6 +151,7 @@ class _PlayerPageState extends State<PlayerPage> {
   void dispose() {
     _videoController?.removeListener(_onTick);
     _videoController?.dispose();
+    _logger.dispose();
     super.dispose();
   }
 

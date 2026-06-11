@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import cast, func, Date
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -111,3 +111,67 @@ def highlight_stats(highlight_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="highlight not found")
     counts = _interaction_counts(db)
     return ok(HighlightStatsOut(**_stats_for_highlight(highlight, counts)).model_dump())
+
+
+@router.get("/analytics/trend")
+def analytics_trend(
+    from_date: str = None,
+    to_date: str = None,
+    db: Session = Depends(get_db),
+):
+    """按日期分组返回互动趋势数据。
+    - `from_date`: 可选，格式 YYYY-MM-DD，起始日期（含）
+    - `to_date`: 可选，格式 YYYY-MM-DD，结束日期（含）
+    未传日期时返回最近 30 天数据。
+    """
+    from datetime import datetime, timedelta
+
+    if from_date:
+        try:
+            start = datetime.strptime(from_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="from_date 格式应为 YYYY-MM-DD")
+    else:
+        start = datetime.utcnow() - timedelta(days=30)
+
+    if to_date:
+        try:
+            # 包含 to_date 当天，取到次日零时
+            end = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="to_date 格式应为 YYYY-MM-DD")
+    else:
+        end = datetime.utcnow() + timedelta(days=1)
+
+    if start >= end:
+        raise HTTPException(status_code=400, detail="from_date 必须早于 to_date")
+
+    rows = (
+        db.query(
+            cast(UserInteractionLog.created_at, Date).label("date"),
+            UserInteractionLog.action_type,
+            func.count(UserInteractionLog.id).label("count"),
+        )
+        .filter(
+            UserInteractionLog.created_at >= start,
+            UserInteractionLog.created_at < end,
+        )
+        .group_by(cast(UserInteractionLog.created_at, Date), UserInteractionLog.action_type)
+        .order_by(cast(UserInteractionLog.created_at, Date))
+        .all()
+    )
+
+    # 按日期聚合为一条记录
+    trend: dict[str, dict[str, int]] = {}
+    for date, action_type, count in rows:
+        date_str = str(date)
+        trend.setdefault(date_str, {"date": date_str, "impression": 0, "click": 0, "ignore": 0})
+        if action_type in trend[date_str]:
+            trend[date_str][action_type] = count
+
+    result = sorted(trend.values(), key=lambda x: x["date"])
+    for item in result:
+        imp = item["impression"]
+        item["click_rate"] = round(item["click"] / imp, 4) if imp else 0
+
+    return ok(result)

@@ -3,8 +3,12 @@ CREATE TABLE IF NOT EXISTS drama (
   title VARCHAR(120) NOT NULL,
   description TEXT,
   cover_url VARCHAR(500),
+  wide_cover_url VARCHAR(500) DEFAULT '',
+  categories_json TEXT DEFAULT '[]',
+  cast_tags_json TEXT DEFAULT '[]',
   status VARCHAR(32) DEFAULT 'active',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS user_account (
@@ -22,12 +26,20 @@ CREATE TABLE IF NOT EXISTS episode (
   episode_no INTEGER NOT NULL,
   title VARCHAR(120) NOT NULL,
   video_url VARCHAR(500) NOT NULL,
+  video_original_name VARCHAR(255),
   subtitle_url VARCHAR(500),
+  subtitle_original_name VARCHAR(255),
   subtitle_content TEXT,
   duration REAL DEFAULT 0,
+  asset_status VARCHAR(32) DEFAULT 'draft',
+  video_width INTEGER DEFAULT 0,
+  video_height INTEGER DEFAULT 0,
+  video_file_size INTEGER DEFAULT 0,
+  video_mime_type VARCHAR(120) DEFAULT '',
   analyze_status VARCHAR(32) DEFAULT 'pending',
   analyze_error TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (drama_id) REFERENCES drama(id),
   FOREIGN KEY (owner_user_id) REFERENCES user_account(id)
 );
@@ -134,6 +146,7 @@ CREATE TABLE IF NOT EXISTS system_setting (
 
 CREATE INDEX IF NOT EXISTS idx_episode_drama ON episode(drama_id);
 CREATE INDEX IF NOT EXISTS idx_episode_owner_user ON episode(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_episode_asset_status ON episode(asset_status);
 CREATE INDEX IF NOT EXISTS idx_episode_analyze_status ON episode(analyze_status);
 CREATE INDEX IF NOT EXISTS idx_user_account_username ON user_account(username);
 CREATE INDEX IF NOT EXISTS idx_highlight_episode_status ON highlight_event(episode_id, status);

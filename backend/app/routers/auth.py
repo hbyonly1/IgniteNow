@@ -18,9 +18,6 @@ def _token_response(user: UserAccount) -> dict:
         access_token=token,
         expires_in=settings.jwt_expire_minutes * 60,
         user=user_out,
-        user_id=user.id,
-        username=user.username,
-        role=user.role,
     ).model_dump()
 
 

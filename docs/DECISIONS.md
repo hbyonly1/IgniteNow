@@ -37,9 +37,17 @@
 
 ## 2026-06-10 系统设置持久化范围
 
-- 系统设置第一阶段新增 `system_setting` 表与 `/api/system/settings` 读写接口，按 `ai`、`review`、`player`、`upload`、`security` 分组保存 JSON 配置。
-- 当前接口负责配置持久化和管理后台回显，不承诺所有字段立即驱动运行时行为；后续将按风险逐项接入，例如播放端浮层时长、上传限制和审核阈值。
+- 系统设置第一阶段保留 `system_setting` 通用表与 `/api/system/settings` 读写接口，但不暴露未接入真实运行逻辑的占位配置项。
+- 已删除原 `ai`、`review`、`player`、`upload`、`security` 分组中的占位字段；后续新增系统设置前，必须先接入对应业务逻辑，再同步 API 契约、前端表单和表数据。
 - 系统设置仅允许 `admin` 访问，`uploader` 不能读取或修改系统级配置，避免上传账号影响全局运行策略。
+
+## 2026-06-11 阶段 2 内容资产字段补齐
+
+- 内容资产真实化第一步先扩展 `drama` 与 `episode` 字段，不立即拆分类、演员等独立字典表，避免阶段 2 初期引入过多管理后台维护面。
+- `drama.categories` 与 `drama.cast_tags` 在 API 中以数组暴露，数据库第一版分别用 `categories_json`、`cast_tags_json` 保存；后续如果需要统一分类管理，再升级为独立表和关联表。
+- `episode.asset_status` 第一版用于承载后台上传与素材完整度状态，允许 `draft`、`ready`、`incomplete`；AI 分析聚合接口仍会在缺少视频或字幕时保守返回 `incomplete`。
+- 后台视频上传第一版直接写入 `episode` 的 `duration`、`video_width`、`video_height`、`video_file_size` 和 `video_mime_type`，不单独新增 asset 表；这样能先满足内容管理和 AI 分析真实素材链路。
+- 管理后台通用素材上传使用 `/api/admin/assets/files`，单集视频/字幕入库使用 `/api/dramas/{drama_id}/episodes/upload`；上传素材通过 `/uploads/...` 暴露静态可访问 URL，数据库仍保留服务端本地 path 以便播放代理和后续对象存储迁移；移动端上传接口不复用，后续按已确认方案单独下线。
 
 ## 2026-05-28 数据库引擎切换至 PostgreSQL
 

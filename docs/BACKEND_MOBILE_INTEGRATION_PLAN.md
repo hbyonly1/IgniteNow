@@ -25,11 +25,11 @@
 
 ### 1.2 当前管理后台页面状态
 
-- 内容管理页：真实调用 `GET /api/dramas`、`POST /api/dramas`、`PUT /api/dramas/{id}`，但“上传短剧”弹窗里的封面上传、素材上传、分类、主演、AI 开关大多仍是前端 UI，占位字段没有落库。
-- AI 分析页：真实调用 `GET /api/dramas`、`GET /api/episodes`、`GET/POST /api/system/jobs`；无真实任务时仍有 mock 行和 mock 详情兜底。
-- 发布中心：目前是纯前端演示数据，`publishItems`、`recentRecords`、发布配置、定时发布、一键发布都没有后端模型或接口。
-- 仪表盘：仍是占位页，未接 `/api/analytics/overview`。
-- 系统设置：仍是配置 UI 草案，保存按钮明确提示接口未接入。
+- 内容管理页：真实调用 `GET /api/dramas`、`POST /api/dramas`、`PUT /api/dramas/{id}`；阶段 2 已补齐 `wide_cover_url`、`categories`、`cast_tags`、`updated_at`、`asset_status` 和视频元数据字段。上传短剧弹窗已接入封面/横版封面/视频/字幕真实上传、指定短剧单集上传入库和上传后自动提交 AI 分析任务。
+- AI 分析页：已改为读取 `GET /api/analysis/queue` 聚合接口，任务创建、重试、详情和日志继续使用 `/api/system/jobs`；无真实任务时显示真实空状态，不再使用 mock 行。
+- 发布中心：已新增 `publish_job`、`publish_job_item`、待发布列表、发布任务、一键发布、发布记录、详情和重试接口，前端已替换核心 mock 数据。定时发布 worker 和发布单维度回流聚合仍待阶段 3。
+- 仪表盘：已接入 `/api/analytics/overview`、`/api/analytics/highlight-types`、`/api/analytics/top-actions` 和 `/api/analytics/highlight-ranking`。
+- 系统设置：保留 `/api/system/settings` 基础读写接口和前端占位骨架，未接入真实运行逻辑的配置项已删除。
 
 ### 1.3 当前 Flutter 播放端状态
 
@@ -63,7 +63,7 @@
 
 当前 `drama` 只有 `title`、`description`、`cover_url`、`status`。但前端“上传短剧”已经设计了分类、主演、横版封面、剧集数量、素材上传、AI 开关。
 
-建议新增字段：
+阶段 2 已开始落地第一批内容资产字段：
 
 | 表 | 字段 | 说明 |
 |---|---|---|
@@ -72,7 +72,8 @@
 | `drama` | `cast_tags_json` | 主演/标签数组，JSON 字符串 |
 | `drama` | `updated_at` | 内容管理“最后更新时间”来源 |
 | `episode` | `updated_at` | AI、上传、配置变更时更新 |
-| `episode` | `asset_status` | 可选：`draft`、`ready`、`incomplete`，用于内容资产完整度 |
+| `episode` | `asset_status` | `draft`、`ready`、`incomplete`，用于内容资产完整度 |
+| `episode` | `video_width`、`video_height`、`video_file_size`、`video_mime_type` | 后台上传视频时由 ffprobe 自动解析 |
 
 如果后续要做更规范的分类管理，再拆 `category`、`drama_category`、`cast_member` 表。MVP 阶段用 JSON 字符串足够，改动更小。
 
@@ -84,8 +85,8 @@
 
 | 接口 | 用途 |
 |---|---|
-| `POST /api/admin/assets/files` | 上传封面、视频、字幕等通用文件，返回可存储 URL 或本地路径 |
-| `POST /api/dramas/{drama_id}/episodes/upload` | 管理后台为指定短剧上传单集视频/字幕 |
+| `POST /api/admin/assets/files` | 已新增并接入前端；上传封面、视频、字幕等通用文件，返回 `/uploads/...` 可访问 URL 和本地 path，视频会解析 ffprobe 元数据 |
+| `POST /api/dramas/{drama_id}/episodes/upload` | 已新增；管理后台为指定短剧上传单集视频/字幕并创建 episode |
 | `POST /api/dramas/{drama_id}/episodes/batch` | 批量创建剧集配置，第一版可只接 JSON，不必立刻解析 Excel |
 | `POST /api/dramas/{drama_id}/enqueue-analysis` | 按短剧批量提交 AI 分析任务 |
 
@@ -152,26 +153,16 @@ episode.android_publish_status = published
 
 ### 3.5 系统设置落库
 
-当前设置页是 UI 草案。后端应新增：
-
 | 表 | 字段 |
 |---|---|
 | `system_setting` | `key`、`value_json`、`updated_by_user_id`、`updated_at` |
 
-接口：
+接口已保留：
 
 - `GET /api/system/settings`
 - `PUT /api/system/settings`
 
-需要优先生效的配置：
-
-- `player.overlay_duration_ms`
-- `player.record_ignore`
-- `review.min_confidence`
-- `review.confirm_bulk_publish`
-- `upload.max_video_size_mb`
-- `upload.allowed_subtitle_formats`
-- `ai.max_highlights_per_episode`
+当前未接入真实运行逻辑的占位配置项已删除，接口返回空 `settings`。后续新增任何设置前，必须先接入对应业务逻辑，再同步 API 契约和前端表单。
 
 ### 3.6 数据看板接入
 
@@ -320,15 +311,7 @@ GET /api/analysis/queue
 
 ### 6.5 系统设置
 
-需要增加：
-
-- 读取设置：`GET /api/system/settings`
-- 保存设置：`PUT /api/system/settings`
-- 保存后提示哪些配置立即生效，哪些需要重启 worker。
-
-需要删除：
-
-- “保存接口尚未接入”的提示逻辑。
+当前保留系统设置页面和 `/api/system/settings` 基础接口，但不展示未接入真实逻辑的配置项。后续新增设置时，需要在页面上明确该设置是否立即生效、是否需要重启 worker。
 
 ## 7. Android 播放端衔接要求
 
@@ -385,7 +368,6 @@ Android 不应调用后台接口，不应携带管理员 token。推荐保持以
 - 播放页在视频加载失败时展示可复制的 `video_url` 或 request id，便于联调。
 - 互动日志失败时做本地队列重试，不要只在内存里丢弃。
 - 移动端启动播放页时生成 `play_session_id`，并随每次互动回传。
-- 如果后端设置页启用 `overlay_duration_ms`，播放详情或单独配置接口需要下发该值，移动端不要写死 4 秒。
 
 ## 8. 推荐实施顺序
 
@@ -405,10 +387,10 @@ Android 不应调用后台接口，不应携带管理员 token。推荐保持以
 
 ### 阶段 2：补齐上传与内容资产
 
-1. 后端补 drama 扩展字段和 updated_at。
-2. 后台上传封面、视频、字幕接真实文件接口。
-3. 后台上传短剧可以创建剧集。
-4. 上传后按配置自动提交 AI 分析任务。
+1. 后端补 drama 扩展字段和 updated_at。（已完成：`wide_cover_url`、`categories_json`、`cast_tags_json`、`drama.updated_at`、`episode.updated_at`、`episode.asset_status` 已落地）
+2. 后台上传封面、视频、字幕接真实文件接口。（已完成）
+3. 后台上传短剧可以创建剧集。（已完成第一版：单次提交创建第 1 集）
+4. 上传后按配置自动提交 AI 分析任务。（已完成第一版）
 
 验收标准：
 
@@ -468,3 +450,69 @@ Flutter：
 ```
 
 只要保持播放端接口字段隔离和 `highlight_event.status=published` 规则不破坏，Android 端可以低成本继续沿用现有 API，并自然接入后台发布后的内容。
+
+---
+
+## 11. 执行状态追踪（截至 2026-06-11）
+
+### 11.1 三个阶段完成情况
+
+| 阶段 | 条目 | 状态 |
+|---|---|---|
+| **阶段 1** | 仪表盘接 analytics overview | ✅ 已完成 |
+| | 发布中心新增最小发布接口和发布表 | ✅ 已完成 |
+| | 发布中心替换 mock 数据 | ✅ 已完成 |
+| | 系统设置新增读写接口 | ✅ 已完成 |
+| | 删除 AI 分析 mock 行，改真实空状态 | ✅ 已完成 |
+| **阶段 2** | drama 扩展字段（wide_cover_url、categories_json 等） | ✅ 已完成 |
+| | 后台上传封面/视频/字幕接真实接口（ffprobe 元数据解析） | ✅ 已完成 |
+| | 上传短剧后创建剧集（第 1 集） | ✅ 已完成 |
+| | 上传后自动提交 AI 分析任务 | ✅ 已完成 |
+| **阶段 3** | 定时发布 worker（asyncio 每分钟扫描到期发布单） | ✅ 已完成 |
+| | 发布失败可重试（接口 + 前端重试按钮） | ✅ 已完成 |
+| | 发布单回流数据展示（曝光/点击/点击率分列） | ✅ 已完成 |
+| | 移动端 play_session_id 上报 | ✅ 已完成 |
+| | 移动端互动日志本地失败重试队列 | ✅ 已完成 |
+| | 删除移动端上传页面和上传入口 | ✅ 已完成 |
+
+### 11.2 计划内尚未落地的条目
+
+下列条目在计划中有明确描述，当前执行情况如下：
+
+#### 高优先 — 全部已完成 ✅
+
+| 条目 | 章节 | 状态 |
+|---|---|---|
+| 删除后端 `POST /api/uploads/episodes` | §5 | ✅ 已改为 410 Gone，测试同步更新 |
+| 后端接收并存储 `play_session_id` | §4.4 | ✅ 模型、Schema、schema_compat、API 契约同步更新 |
+| Flutter 剧集列表区分"暂无高光"和"可播放但无互动" | §7.3 | ✅ 已区分金色高光标签和灰色"暂无高光"状态 |
+
+#### 中优先 — 全部已完成 ✅
+
+| 条目 | 章节 | 状态 |
+|---|---|---|
+| `POST /api/dramas/{drama_id}/episodes/batch` 批量创建剧集 | §3.2 | ✅ 已实现，最多 100 条/次，episode_no 不重复校验 |
+| `POST /api/dramas/{drama_id}/enqueue-analysis` 按短剧批量提交 AI 分析 | §3.2 | ✅ 已实现，跳过 processing/success 状态剧集 |
+| `POST /api/system/jobs/{job_id}/cancel` 取消任务 | §4.2 | ✅ 已实现，只允许取消 pending 状态任务 |
+| `GET /api/system/jobs/latest?episode_ids=...` | §4.2 | ⏭️ 跳过，`/api/analysis/queue` 已覆盖该场景 |
+
+#### 低优先 — 已完成两个，一个需运维决策
+
+| 条目 | 章节 | 状态 |
+|---|---|---|
+| `GET /api/analytics/trend?from_date=&to_date=` 趋势接口 | §3.6 | ✅ 已实现，按日期分组，支持日期范围过滤，默认最近 30 天 |
+| `GET /api/publish/jobs/{job_id}/analytics` 发布单维度回流 | §3.6 | ✅ 已实现，按剧集细化展示曝光/点击/忽略数据 |
+| 多实例定时发布并发安全 | §3.3 | ⚠️ 未实现，需运维侧决策（单实例部署可忽略） |
+
+### 11.3 遗留技术债
+
+- **多实例并发安全**：定时发布 worker 仅保证单 uvicorn 进程安全。生产多实例部署需加 `SELECT FOR UPDATE SKIP LOCKED` 或使用外部 cron，否则同一发布单可能被多次执行。
+- **`AuthTokenOut` 中残留移动端字段**：`schemas.py` 中 `AuthTokenOut` 仍保留 `user_id`、`username`、`role` 平铺字段（兼容旧客户端），随着上传链路完全下线后可清理。
+- **`UploadEpisodeOut` schema 可以删除**：`uploads.py` 现已仅返回 410 Gone，该 schema 不再被引用，后续可从 `schemas.py` 移除。
+
+### 11.4 验收基线（截至本次）
+
+- 后端：43 个测试全部通过（`pytest tests --basetemp .codex-pytest-tmp`）
+- 前端：`npm run build` 通过（Vite 4 chunk > 500k 为既有提示，非错误）
+- 后端编译：`compileall backend/app` 通过
+- Flutter：`flutter analyze` 0 error，0 warning

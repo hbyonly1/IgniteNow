@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
 
 from backend.app.database import Base, SessionLocal, engine
 from backend.app.models import UserAccount
+from backend.app.schema_compat import ensure_app_schema
 from backend.app.services.auth_service import ADMIN_ROLE, hash_password
 
 
@@ -23,6 +24,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     Base.metadata.create_all(bind=engine)
+    ensure_app_schema(engine)
     password = args.password or secrets.token_urlsafe(18)
 
     with SessionLocal() as db:

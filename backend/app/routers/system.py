@@ -1,5 +1,6 @@
 import json
 from copy import deepcopy
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,53 +8,17 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Episode, Job, JobLog, SystemLog, SystemSetting
-from ..schemas import JOB_TYPES, JobCreate, JobLogOut, JobOut, SystemSettingsUpdate
+from ..schemas import JOB_TYPES, JobCreate, JobLogOut, JobOut, PromptTemplateUpdate, SystemSettingsUpdate
 from ..services.auth_service import ADMIN_ROLE, UPLOADER_ROLE
 from ..services.job_service import create_and_enqueue_job, retry_job
 from .common import ok, require_admin, require_roles
 
 router = APIRouter(prefix="/system")
+settings_router = APIRouter(prefix="/settings")
 require_workspace_user = require_roles(ADMIN_ROLE, UPLOADER_ROLE)
 
-DEFAULT_SYSTEM_SETTINGS = {
-    "ai": {
-        "llm_enabled": False,
-        "base_url": "https://api.openai.com/v1",
-        "model": "gpt-4o-mini",
-        "timeout_seconds": 60,
-        "fallback_enabled": True,
-        "max_highlights_per_episode": 8,
-        "allow_force_reanalyze": True,
-    },
-    "review": {
-        "require_no_overlap": True,
-        "min_confidence": 0.65,
-        "default_highlight_status": "draft",
-        "confirm_bulk_publish": True,
-        "mark_low_confidence": True,
-    },
-    "player": {
-        "overlay_duration_ms": 4000,
-        "default_position": "bottom",
-        "enable_effects": True,
-        "record_ignore": True,
-        "anonymous_user_strategy": "persisted_device_id",
-    },
-    "upload": {
-        "max_video_size_mb": 500,
-        "allowed_subtitle_formats": "srt,vtt,txt",
-        "allow_without_subtitle": True,
-        "default_duration_seconds": 0,
-        "auto_enqueue_analysis": False,
-    },
-    "security": {
-        "jwt_expire_minutes": 120,
-        "uploader_can_create_drama": False,
-        "uploader_can_force_reanalyze": True,
-        "audit_admin_actions": True,
-        "session_expiry_action": "redirect_login",
-    },
-}
+DEFAULT_SYSTEM_SETTINGS = {}
+PROMPT_TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "ai_service" / "prompt_template.md"
 
 
 def _load_settings(db: Session) -> dict:
@@ -118,18 +83,24 @@ def update_system_settings(
     user=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    incoming = payload.model_dump()
-    for key, defaults in DEFAULT_SYSTEM_SETTINGS.items():
-        value = dict(defaults)
-        value.update(incoming.get(key) or {})
-        row = db.get(SystemSetting, key)
-        if not row:
-            row = SystemSetting(key=key)
-            db.add(row)
-        row.value_json = json.dumps(value, ensure_ascii=False)
-        row.updated_by_user_id = user.id
+    payload.model_dump()
+    db.query(SystemSetting).delete()
     db.commit()
     return ok(_load_settings(db), "settings saved")
+
+
+@settings_router.get("/prompt-template")
+def get_prompt_template(user=Depends(require_admin)):
+    return ok({"content": PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")})
+
+
+@settings_router.put("/prompt-template")
+def update_prompt_template(payload: PromptTemplateUpdate, user=Depends(require_admin)):
+    content = payload.content.strip()
+    if "highlights" not in content or "highlight_type" not in content:
+        raise HTTPException(status_code=400, detail="prompt template must mention highlights and highlight_type")
+    PROMPT_TEMPLATE_PATH.write_text(f"{content}\n", encoding="utf-8")
+    return ok({"content": content}, "prompt template saved")
 
 
 @router.get("/jobs")
@@ -212,6 +183,29 @@ def retry_failed_job(job_id: int, user=Depends(require_workspace_user), db: Sess
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"failed to enqueue job: {exc}") from exc
     return ok(_job_out(retry), "job retried")
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_job(job_id: int, user=Depends(require_workspace_user), db: Session = Depends(get_db)):
+    """取消等待中的任务。
+    只允许取消 pending 状态的任务；running 状态的任务已交给 RQ worker 执行，
+    无法从 HTTP 层安全终止，应等待其完成后重试或人工干预。
+    """
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    if not _can_access_job(db, user, job):
+        raise HTTPException(status_code=403, detail="job is not owned by current uploader")
+    if job.status != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail=f"only pending jobs can be canceled (current status: {job.status})",
+        )
+    job.status = "canceled"
+    db.commit()
+    db.refresh(job)
+    return ok(_job_out(job), "job canceled")
+
 
 
 @router.get("/logs", dependencies=[Depends(require_workspace_user)])

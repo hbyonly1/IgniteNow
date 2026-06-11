@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
@@ -6,6 +6,7 @@ import {
   Checkbox,
   Empty,
   Input,
+  InputNumber,
   Modal,
   Pagination,
   Radio,
@@ -16,13 +17,15 @@ import {
   message,
 } from 'antd';
 import {
+  AimOutlined,
   ArrowLeftOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseOutlined,
+  DownOutlined,
   FileSearchOutlined,
-  PlayCircleFilled,
   ReloadOutlined,
+  RightOutlined,
   RotateRightOutlined,
   SearchOutlined,
   SendOutlined,
@@ -37,6 +40,23 @@ const stageMeta = {
   success: { label: '已完成', color: 'success' },
   failed: { label: '失败', color: 'error' },
 };
+
+const highlightTypeMeta = {
+  conflict: { label: '冲突', color: 'blue' },
+  reversal: { label: '反转', color: 'purple' },
+  sweet: { label: '心动', color: 'magenta' },
+  satisfying: { label: '爆点', color: 'orange' },
+  suspense: { label: '悬念', color: 'cyan' },
+};
+
+const highlightStatusMeta = {
+  draft: { label: '待审核', color: 'warning' },
+  published: { label: '已通过', color: 'success' },
+  rejected: { label: '已拒绝', color: 'error' },
+  archived: { label: '已归档', color: 'default' },
+};
+
+const editableHighlightStatuses = ['draft', 'published', 'rejected'];
 
 function parsePayload(value) {
   try {
@@ -58,6 +78,29 @@ function formatDuration(seconds) {
   const minutes = Math.floor(totalSeconds / 60);
   const rest = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+}
+
+function formatTimecode(seconds) {
+  const value = Math.max(0, Number(seconds ?? 0));
+  const minutes = Math.floor(value / 60);
+  const rest = value - minutes * 60;
+  return `${String(minutes).padStart(2, '0')}:${rest.toFixed(2).padStart(5, '0')}`;
+}
+
+function parseTimecode(value) {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    return 0;
+  }
+  if (!text.includes(':')) {
+    return Number(text) || 0;
+  }
+  const [minutes, seconds] = text.split(':');
+  return (Number(minutes) || 0) * 60 + (Number(seconds) || 0);
+}
+
+function formatRange(record) {
+  return `${formatTimecode(record.start_time)} - ${formatTimecode(record.end_time)}`;
 }
 
 function hasSubtitle(episode) {
@@ -117,6 +160,7 @@ function AnalyzeQueue() {
   const [queueItems, setQueueItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [expandedRowKeys, setExpandedRowKeys] = useState([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -126,6 +170,7 @@ function AnalyzeQueue() {
   const [assetDramaFilter, setAssetDramaFilter] = useState('all');
   const [onlyReadyAssets, setOnlyReadyAssets] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [reviewEpisode, setReviewEpisode] = useState(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -155,7 +200,7 @@ function AnalyzeQueue() {
 
   const rows = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    const nextRows = queueItems.map((episode, index) => {
+    const nextEpisodes = queueItems.map((episode, index) => {
       const latestJob = episode.latest_job;
       const progress = progressForEpisode(episode, latestJob);
       const updatedAt = episode.updated_at ?? latestJob?.updated_at ?? latestJob?.created_at ?? episode.created_at;
@@ -169,19 +214,49 @@ function AnalyzeQueue() {
       };
     });
 
-    const filteredRows = nextRows
-      .filter((row) => {
-        if (keyword && !`${row.drama_title} ${row.title}`.toLowerCase().includes(keyword)) {
-          return false;
-        }
-        if (statusFilter !== 'all' && row.analyze_status !== statusFilter) {
-          return false;
-        }
-        return true;
-      })
-      .sort((a, b) => new Date(b.updated_at_display ?? 0) - new Date(a.updated_at_display ?? 0));
+    const groupsMap = new Map();
+    nextEpisodes.forEach((ep) => {
+      if (keyword && !`${ep.drama_title} ${ep.title}`.toLowerCase().includes(keyword)) {
+        return;
+      }
+      if (statusFilter !== 'all' && ep.analyze_status !== statusFilter) {
+        return;
+      }
 
-    return filteredRows;
+      if (!groupsMap.has(ep.drama_id)) {
+        groupsMap.set(ep.drama_id, {
+          is_drama_group: true,
+          id: `drama-${ep.drama_id}`,
+          drama_id: ep.drama_id,
+          drama_title: ep.drama_title,
+          cover_url: ep.cover_url,
+          episodes: [],
+          total_episodes: 0,
+          finished_episodes: 0,
+          processing_episodes: 0,
+          failed_episodes: 0,
+          pending_episodes: 0,
+          updated_at_display: 0,
+        });
+      }
+      const group = groupsMap.get(ep.drama_id);
+      group.episodes.push(ep);
+      group.total_episodes++;
+      if (ep.analyze_status === 'success') group.finished_episodes++;
+      else if (ep.analyze_status === 'processing') group.processing_episodes++;
+      else if (ep.analyze_status === 'failed') group.failed_episodes++;
+      else group.pending_episodes++;
+
+      if (!group.updated_at_display || new Date(ep.updated_at_display).getTime() > new Date(group.updated_at_display).getTime()) {
+        group.updated_at_display = ep.updated_at_display;
+      }
+    });
+
+    const result = Array.from(groupsMap.values()).sort((a, b) => new Date(b.updated_at_display ?? 0) - new Date(a.updated_at_display ?? 0));
+    result.forEach((group) => {
+      group.children = group.episodes.sort((a, b) => a.episode_no - b.episode_no).map(ep => ({ ...ep, is_drama_group: false }));
+    });
+    return result;
   }, [queueItems, query, statusFilter]);
 
   const metrics = useMemo(() => {
@@ -208,11 +283,7 @@ function AnalyzeQueue() {
     () => rows.slice((effectivePage - 1) * pageSize, effectivePage * pageSize),
     [effectivePage, rows],
   );
-  const selectedRows = useMemo(
-    () => rows.filter((item) => selectedRowKeys.includes(item.id)),
-    [rows, selectedRowKeys],
-  );
-  const hasSelectedRows = selectedRows.length > 0;
+  const hasSelectedRows = selectedRowKeys.length > 0;
 
   const assetRows = useMemo(() => {
     const keyword = assetQuery.trim().toLowerCase();
@@ -267,21 +338,27 @@ function AnalyzeQueue() {
   };
 
   const submitBatchRetry = async () => {
-    if (!selectedRows.length) {
+    if (!selectedRowKeys.length) {
       message.warning('请选择任务');
+      return;
+    }
+    const selectedIds = new Set(selectedRowKeys);
+    const episodes = queueItems.filter(ep => selectedIds.has(ep.id) && ep.analyze_status !== 'pending' && ep.analyze_status !== 'processing');
+    if (!episodes.length) {
+      message.warning('所选短剧中没有可重试的剧集');
       return;
     }
     setLoading(true);
     try {
       await Promise.all(
-        selectedRows.map((episode) =>
+        episodes.map((episode) =>
           apiClient.post('/api/system/jobs', {
             type: 'ai_analyze',
             payload: { episode_id: episode.id, force_reanalyze: true },
           }),
         ),
       );
-      message.success(`已批量重试 ${selectedRows.length} 个任务`);
+      message.success(`已批量重试 ${episodes.length} 个任务`);
       setSelectedRowKeys([]);
       await loadData();
     } catch (error) {
@@ -292,21 +369,27 @@ function AnalyzeQueue() {
   };
 
   const submitBatchAnalysis = async () => {
-    if (!selectedRows.length) {
+    if (!selectedRowKeys.length) {
       message.warning('请选择任务');
+      return;
+    }
+    const selectedIds = new Set(selectedRowKeys);
+    const episodes = queueItems.filter(ep => selectedIds.has(ep.id) && (ep.analyze_status === 'pending' || ep.analyze_status === 'failed'));
+    if (!episodes.length) {
+      message.warning('所选短剧中没有需要提交的剧集');
       return;
     }
     setLoading(true);
     try {
       await Promise.all(
-        selectedRows.map((episode) =>
+        episodes.map((episode) =>
           apiClient.post('/api/system/jobs', {
             type: 'ai_analyze',
-            payload: { episode_id: episode.id, force_reanalyze: false },
+            payload: { episode_id: episode.id, force_reanalyze: episode.analyze_status === 'failed' },
           }),
         ),
       );
-      message.success(`已批量提交 ${selectedRows.length} 个任务`);
+      message.success(`已批量提交 ${episodes.length} 个分析任务`);
       setSelectedRowKeys([]);
       await loadData();
     } catch (error) {
@@ -316,8 +399,33 @@ function AnalyzeQueue() {
     }
   };
 
+  const submitDramaAnalysis = async (dramaGroup) => {
+    const episodes = dramaGroup.episodes.filter(ep => ep.analyze_status === 'pending' || ep.analyze_status === 'failed');
+    if (!episodes.length) {
+      message.info('该剧暂无可分析的集数');
+      return;
+    }
+    setLoading(true);
+    try {
+      await Promise.all(
+        episodes.map((episode) =>
+          apiClient.post('/api/system/jobs', {
+            type: 'ai_analyze',
+            payload: { episode_id: episode.id, force_reanalyze: episode.analyze_status === 'failed' },
+          }),
+        ),
+      );
+      message.success(`已提交 ${episodes.length} 集分析任务`);
+      await loadData();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '全剧提交失败'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const cancelBatchAnalysis = () => {
-    if (!selectedRows.length) {
+    if (!selectedRowKeys.length) {
       message.warning('请选择任务');
       return;
     }
@@ -342,35 +450,72 @@ function AnalyzeQueue() {
 
   const columns = [
     {
-      title: '短剧名称',
+      title: '短剧名称 / 剧集',
       dataIndex: 'drama_title',
       width: '42%',
-      render: (_, record) => (
-        <div className="analysis-drama-cell">
-          <span className="analysis-cover">
-            {record.cover_url ? <img src={record.cover_url} alt="" loading="lazy" /> : <span>{coverText(record.drama_title)}</span>}
-          </span>
-          <strong>{record.drama_title}</strong>
-        </div>
-      ),
+      render: (_, record) => {
+        if (record.is_drama_group) {
+          const isExpanded = expandedRowKeys.includes(record.id);
+          const toggleExpand = (e) => {
+            e.stopPropagation();
+            setExpandedRowKeys(prev =>
+              isExpanded ? prev.filter(k => k !== record.id) : [...prev, record.id]
+            );
+          };
+          return (
+            <div className="analysis-drama-cell">
+              <span
+                onClick={toggleExpand}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 20,
+                  height: 20,
+                  marginRight: 10,
+                  border: '1.5px solid #222',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  color: '#222',
+                  fontSize: 10,
+                  userSelect: 'none',
+                }}
+              >
+                {isExpanded ? <DownOutlined /> : <RightOutlined />}
+              </span>
+              <span className="analysis-cover">
+                {record.cover_url ? <img src={record.cover_url} alt="" loading="lazy" /> : <span>{coverText(record.drama_title)}</span>}
+              </span>
+              <strong>{record.drama_title}</strong>
+            </div>
+          );
+        } else {
+          return <span style={{ paddingLeft: 8 }}>第 {record.episode_no} 集</span>;
+        }
+      },
     },
     {
-      title: '剧集',
-      dataIndex: 'episode_no',
+      title: '分析进度 / 阶段',
       width: '16%',
-      render: (value) => `第 ${value} 集`,
+      render: (_, record) => {
+        if (record.is_drama_group) {
+          return `${record.finished_episodes} / ${record.total_episodes} 集`;
+        } else {
+          const meta = stageMeta[record.analyze_status] ?? stageMeta.pending;
+          return <Tag className="analysis-stage-tag" color={meta.color}>{meta.label}</Tag>;
+        }
+      },
     },
     {
-      title: '当前阶段',
-      dataIndex: 'analyze_status',
+      title: '整体状态',
       width: '22%',
-      render: (value) => {
-        const meta = stageMeta[value] ?? stageMeta.pending;
-        return (
-          <Tag className="analysis-stage-tag" color={meta.color}>
-            {meta.label}
-          </Tag>
-        );
+      render: (_, record) => {
+        if (!record.is_drama_group) return null;
+        if (record.processing_episodes > 0) return <Tag color="processing">分析中 ({record.processing_episodes})</Tag>;
+        if (record.failed_episodes > 0) return <Tag color="error">含失败 ({record.failed_episodes})</Tag>;
+        if (record.finished_episodes === record.total_episodes && record.total_episodes > 0) return <Tag color="success">全部完成</Tag>;
+        return <Tag color="default">未分析 / 待处理</Tag>;
       },
     },
     {
@@ -379,28 +524,40 @@ function AnalyzeQueue() {
       width: '20%',
       align: 'right',
       className: 'analysis-action-column',
-      render: (_, record) => (
-        <div className="analysis-row-actions">
-          <Button
-            size="small"
-            className="analysis-icon-action"
-            icon={<ReloadOutlined />}
-            onClick={() => submitSingleRetry(record)}
-          />
-          <Button
-            size="small"
-            className="analysis-detail-action"
-            disabled={!record.latest_job}
-            onClick={() => {
-              if (record.latest_job) {
-                navigate(`/workspace/analyze/jobs/${record.latest_job.id}`);
-              }
-            }}
-          >
-            查看详情
-          </Button>
-        </div>
-      ),
+      render: (_, record) => {
+        if (record.is_drama_group) {
+          return (
+            <Button
+              type="primary"
+              size="small"
+              disabled={record.pending_episodes === 0 && record.failed_episodes === 0}
+              onClick={(e) => { e.stopPropagation(); submitDramaAnalysis(record); }}
+            >
+              一键分析全剧
+            </Button>
+          );
+        } else {
+          return (
+            <div className="analysis-row-actions">
+              <Button
+                size="small"
+                className="analysis-icon-action"
+                icon={<ReloadOutlined />}
+                onClick={() => submitSingleRetry(record)}
+              >
+                重新分析
+              </Button>
+              <Button
+                size="small"
+                className="analysis-detail-action"
+                onClick={() => setReviewEpisode(record)}
+              >
+                高光审核
+              </Button>
+            </div>
+          );
+        }
+      },
     },
   ];
 
@@ -430,10 +587,10 @@ function AnalyzeQueue() {
       </div>
 
       <div className="analysis-metrics">
-        <MetricCard icon={<ClockCircleOutlined />} tone="purple" label="待分析任务" value={metrics.pending} hint="排队处理中" />
-        <MetricCard icon={<SyncOutlined />} tone="blue" label="分析中" value={metrics.processing} hint="平均耗时 02:34" />
-        <MetricCard icon={<StarOutlined />} tone="green" label="已识别高光点" value={metrics.highlights} hint="今日新增 18" />
-        <MetricCard icon={<CheckCircleOutlined />} tone="orange" label="平均置信度" value={`${metrics.confidence}%`} hint="模型表现稳定" />
+        <MetricCard icon={<ClockCircleOutlined />} tone="purple" label="待分析任务" value={metrics.pending} />
+        <MetricCard icon={<SyncOutlined />} tone="blue" label="分析中" value={metrics.processing} />
+        <MetricCard icon={<StarOutlined />} tone="green" label="已识别高光点" value={metrics.highlights} />
+        <MetricCard icon={<CheckCircleOutlined />} tone="orange" label="平均置信度" value={`${metrics.confidence}%`} />
       </div>
 
       <section className="analysis-table-panel">
@@ -463,7 +620,7 @@ function AnalyzeQueue() {
               disabled={!hasSelectedRows}
               onClick={submitBatchAnalysis}
             >
-              批量提交
+              批量分析
             </Button>
             <Button
               danger
@@ -494,21 +651,21 @@ function AnalyzeQueue() {
           loading={loading}
           columns={columns}
           dataSource={pagedRows}
+          expandable={{
+            expandIconColumnIndex: -1,
+            expandedRowKeys,
+            onExpandedRowsChange: setExpandedRowKeys,
+          }}
           rowSelection={{
             selectedRowKeys,
             onChange: setSelectedRowKeys,
+            checkStrictly: false,
           }}
           pagination={false}
           locale={{
             emptyText: (
               <div className="analysis-empty-state">
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无真实分析任务" />
-                <div className="analysis-empty-actions">
-                  <Button type="primary" icon={<FileSearchOutlined />} onClick={() => setTaskModalOpen(true)}>
-                    新建分析任务
-                  </Button>
-                  <Button onClick={() => navigate('/workspace/dramas')}>去内容管理</Button>
-                </div>
               </div>
             ),
           }}
@@ -546,6 +703,7 @@ function AnalyzeQueue() {
             <h3>选择内容资产</h3>
             <div className="analysis-asset-toolbar">
               <Input
+                className="analysis-asset-search"
                 allowClear
                 placeholder="搜索短剧或剧集"
                 prefix={<SearchOutlined />}
@@ -610,21 +768,536 @@ function AnalyzeQueue() {
           </Button>
         </div>
       </Modal>
+
+      <HighlightReviewModal
+        episode={reviewEpisode}
+        open={Boolean(reviewEpisode)}
+        onClose={() => setReviewEpisode(null)}
+        onUpdated={loadData}
+      />
     </section>
   );
 }
 
-function MetricCard({ icon, tone, label, value, hint }) {
+function MetricCard({ icon, tone, label, value }) {
   return (
     <article className={`analysis-metric-card ${tone}`}>
       <span>{icon}</span>
       <div>
         <p>{label}</p>
         <strong>{value}</strong>
-        <em>{hint}</em>
       </div>
     </article>
   );
+}
+
+function HighlightReviewModal({ episode, open, onClose, onUpdated }) {
+  const videoRef = useRef(null);
+  const [highlights, setHighlights] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [selectedId, setSelectedId] = useState(null);
+  const [lastSelectedId, setLastSelectedId] = useState(null);
+  const [editorMode, setEditorMode] = useState('edit');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [keyword, setKeyword] = useState('');
+  const [draft, setDraft] = useState(null);
+
+  const loadHighlights = useCallback(async () => {
+    if (!episode?.id) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await apiClient.get(`/api/episodes/${episode.id}/highlights`);
+      const nextHighlights = response.data.data ?? [];
+      setHighlights(nextHighlights);
+      const nextSelected = nextHighlights[0] ?? null;
+      setSelectedId(nextSelected?.id ?? null);
+      setLastSelectedId(nextSelected?.id ?? null);
+      setEditorMode('edit');
+      setDraft(nextSelected ? highlightToDraft(nextSelected) : null);
+    } catch (error) {
+      message.error(apiErrorMessage(error, '高光列表加载失败'));
+    } finally {
+      setLoading(false);
+    }
+  }, [episode]);
+
+  useEffect(() => {
+    if (open) {
+      Promise.resolve().then(loadHighlights);
+    }
+  }, [loadHighlights, open]);
+
+  const selectedHighlight = useMemo(
+    () => highlights.find((highlight) => highlight.id === selectedId) ?? null,
+    [highlights, selectedId],
+  );
+
+  const filteredHighlights = useMemo(() => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    return highlights.filter((highlight) => {
+      if (typeFilter !== 'all' && highlight.highlight_type !== typeFilter) {
+        return false;
+      }
+      if (statusFilter !== 'all' && highlight.status !== statusFilter) {
+        return false;
+      }
+      if (normalizedKeyword && !`${highlight.reason} ${highlight.button_text} ${highlight.emotion}`.toLowerCase().includes(normalizedKeyword)) {
+        return false;
+      }
+      return true;
+    });
+  }, [highlights, keyword, statusFilter, typeFilter]);
+
+  const stats = useMemo(() => ({
+    all: highlights.length,
+    published: highlights.filter((item) => item.status === 'published').length,
+    draft: highlights.filter((item) => item.status === 'draft').length,
+    rejected: highlights.filter((item) => item.status === 'rejected').length,
+  }), [highlights]);
+
+  const selectHighlight = (highlight) => {
+    setEditorMode('edit');
+    setSelectedId(highlight.id);
+    setLastSelectedId(highlight.id);
+    setDraft(highlightToDraft(highlight));
+    if (videoRef.current) {
+      videoRef.current.currentTime = Number(highlight.start_time ?? 0);
+    }
+  };
+
+  const syncDraftTime = (field) => {
+    const nextTime = formatTimecode(videoRef.current?.currentTime ?? currentTime ?? 0);
+    setDraft((current) => current ? { ...current, [field]: nextTime } : current);
+  };
+
+  const saveHighlight = async (override = {}) => {
+    if (editorMode !== 'edit' || !selectedHighlight || !draft) {
+      return;
+    }
+    const payload = {
+      start_time: parseTimecode(draft.start_time),
+      end_time: parseTimecode(draft.end_time),
+      highlight_type: draft.highlight_type,
+      reason: draft.reason,
+      confidence: Number(draft.confidence ?? 0) / 100,
+      status: draft.status,
+      ...override,
+    };
+    setSaving(true);
+    try {
+      const response = await apiClient.put(`/api/highlights/${selectedHighlight.id}`, payload);
+      const updated = response.data.data;
+      setHighlights((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setDraft(highlightToDraft(updated));
+      message.success('高光已保存');
+      await onUpdated?.();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '高光保存失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateHighlightRecord = async (record, override = {}) => {
+    const payload = {
+      start_time: record.start_time,
+      end_time: record.end_time,
+      highlight_type: record.highlight_type,
+      reason: record.reason,
+      confidence: record.confidence,
+      status: record.status,
+      ...override,
+    };
+    setSaving(true);
+    try {
+      const response = await apiClient.put(`/api/highlights/${record.id}`, payload);
+      const updated = response.data.data;
+      setHighlights((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setSelectedId(updated.id);
+      setDraft(highlightToDraft(updated));
+      message.success('高光已保存');
+      await onUpdated?.();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '高光保存失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitReview = async () => {
+    if (!episode?.id) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const draftIds = highlights.filter((item) => item.status === 'draft').map((item) => item.id);
+      if (draftIds.length) {
+        await apiClient.post(`/api/episodes/${episode.id}/highlights/bulk-status`, {
+          highlight_ids: draftIds,
+          status: 'published',
+        });
+      }
+      message.success(draftIds.length ? `已通过 ${draftIds.length} 条待审核高光` : '没有待提交的审核结果');
+      await loadHighlights();
+      await onUpdated?.();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '提交审核结果失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const duration = Number(episode?.duration ?? 0);
+  const resolvedDuration = duration || videoDuration || 0;
+  const rawVideoUrl = String(episode?.video_url ?? '');
+  const videoUrl = rawVideoUrl
+    ? (rawVideoUrl.startsWith('http')
+      ? rawVideoUrl
+      : rawVideoUrl.startsWith('/uploads')
+        ? `${apiClient.defaults.baseURL}${rawVideoUrl}`
+        : `${apiClient.defaults.baseURL}/api/player/episodes/${episode.id}/video`)
+    : '';
+  const progressPercent = resolvedDuration ? Math.min(100, Math.max(0, (currentTime / resolvedDuration) * 100)) : 0;
+  const selectedMeta = draft
+    ? (highlightTypeMeta[draft.highlight_type] ?? highlightTypeMeta.conflict)
+    : null;
+  const createStartTime = parseTimecode(draft?.start_time);
+  const createEndTime = parseTimecode(draft?.end_time);
+  const canCreateHighlight = editorMode !== 'create' || createEndTime > createStartTime;
+
+  const startCreateHighlight = () => {
+    if (!episode?.id) {
+      return;
+    }
+    const timecode = formatTimecode(Math.max(0, Number(videoRef.current?.currentTime ?? currentTime ?? 0)));
+    setLastSelectedId(selectedId ?? lastSelectedId);
+    setSelectedId(null);
+    setEditorMode('create');
+    setDraft({
+      start_time: timecode,
+      end_time: timecode,
+      highlight_type: 'satisfying',
+      confidence: 50,
+      reason: '',
+      status: 'draft',
+    });
+  };
+
+  const cancelCreateHighlight = () => {
+    const fallback = highlights.find((item) => item.id === lastSelectedId) ?? highlights[0] ?? null;
+    if (fallback) {
+      selectHighlight(fallback);
+      return;
+    }
+    setEditorMode('edit');
+    setSelectedId(null);
+    setDraft(null);
+  };
+
+  const createHighlight = async () => {
+    if (!episode?.id || !draft) {
+      return;
+    }
+    const startTime = parseTimecode(draft.start_time);
+    const endTime = parseTimecode(draft.end_time);
+    if (endTime <= startTime) {
+      message.warning('结束时间必须大于开始时间');
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await apiClient.post(`/api/episodes/${episode.id}/highlights`, {
+        start_time: startTime,
+        end_time: endTime,
+        highlight_type: draft.highlight_type,
+        emotion: '人工添加',
+        intensity: 0.5,
+        confidence: 0.5,
+        trigger_score: 0.5,
+        reason: draft.reason || '人工添加高光点',
+        button_text: '精彩片段',
+        effect: 'boom_effect',
+        status: draft.status,
+      });
+      const created = response.data.data;
+      setHighlights((current) => [...current, created].sort((a, b) => a.start_time - b.start_time));
+      setEditorMode('edit');
+      setSelectedId(created.id);
+      setLastSelectedId(created.id);
+      setDraft(highlightToDraft(created));
+      message.success('已添加人工高光点');
+      await onUpdated?.();
+    } catch (error) {
+      message.error(apiErrorMessage(error, '人工添加失败'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveEditor = () => {
+    if (editorMode === 'create') {
+      return createHighlight();
+    }
+    return saveHighlight();
+  };
+
+  return (
+    <Modal
+      className="upload-drama-modal analysis-review-modal"
+      title={null}
+      open={open}
+      onCancel={onClose}
+      closable={false}
+      footer={null}
+      width="min(1480px, calc(100vw - 48px))"
+      destroyOnHidden
+    >
+      <div className="upload-drama-header">
+        <div>
+          <h2>高光审核详情</h2>
+          <p>基于视频内容识别的高光片段，可进行审核、修改、拒绝或手动添加高光点</p>
+        </div>
+        <Button type="text" className="upload-drama-close" icon={<CloseOutlined />} onClick={onClose} />
+      </div>
+
+      <div className="upload-drama-form analysis-review-form">
+        <section className="upload-drama-card highlight-review-summary">
+          <span className="highlight-review-cover">
+            {episode?.cover_url ? <img src={episode.cover_url} alt="" /> : <span>{coverText(episode?.drama_title)}</span>}
+          </span>
+          <strong>{episode?.drama_title ?? '-'}</strong>
+          <div><b>第 {episode?.episode_no ?? '-'} 集</b><span>集数</span></div>
+          <div><b>{formatDuration(duration)}</b><span>时长</span></div>
+          <div><b>{stageMeta[episode?.analyze_status]?.label ?? '-'}</b><span>分析状态</span></div>
+          <time>分析完成时间：{episode?.latest_job?.updated_at ? new Date(episode.latest_job.updated_at).toLocaleString() : '-'}</time>
+        </section>
+
+        <div className="highlight-review-body">
+          <section className="highlight-review-left">
+            <div className="upload-drama-card highlight-video-panel">
+              <h3>视频时间轴</h3>
+              <div className="highlight-video-frame">
+                {videoUrl ? (
+                  <video
+                    ref={videoRef}
+                    controls
+                    preload="metadata"
+                    src={videoUrl}
+                    poster={episode?.cover_url || undefined}
+                    onLoadedMetadata={(event) => {
+                      setCurrentTime(event.currentTarget.currentTime);
+                      setVideoDuration(Number(event.currentTarget.duration || 0));
+                    }}
+                    onDurationChange={(event) => setVideoDuration(Number(event.currentTarget.duration || 0))}
+                    onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+                  />
+                ) : (
+                  <div className="highlight-video-empty">暂无可播放视频</div>
+                )}
+              </div>
+              <div className="highlight-review-timeline">
+                <div className="highlight-progress-track">
+                  <span className="highlight-progress-fill" style={{ width: `${progressPercent}%` }} />
+                  {highlights.map((highlight) => {
+                    const left = resolvedDuration ? Math.min(98, Math.max(2, (highlight.start_time / resolvedDuration) * 100)) : 8;
+                    const width = resolvedDuration ? Math.max(2, ((highlight.end_time - highlight.start_time) / resolvedDuration) * 100) : 5;
+                    const meta = highlightTypeMeta[highlight.highlight_type] ?? highlightTypeMeta.conflict;
+                    return (
+                      <button
+                        key={highlight.id}
+                        className={`highlight-range ${highlight.highlight_type}${highlight.id === selectedId ? ' active' : ''}`}
+                        style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}
+                        title={`${meta.label} ${formatRange(highlight)}`}
+                        type="button"
+                        onClick={() => selectHighlight(highlight)}
+                      >
+                        <span>{meta.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="highlight-timeline-axis">
+                  <span>{formatDuration(currentTime)}</span>
+                  <span>{formatDuration(resolvedDuration)}</span>
+                </div>
+              </div>
+            </div>
+
+          <div className="upload-drama-card highlight-edit-panel">
+            <div className="highlight-edit-heading">
+              <h3>{editorMode === 'create' ? '新增高光' : '编辑高光'}</h3>
+              <div className="highlight-edit-heading-actions">
+                {editorMode === 'create' ? (
+                  <Button size="small" onClick={cancelCreateHighlight}>取消新增</Button>
+                ) : null}
+                <Button className="highlight-manual-action" size="small" type="primary" onClick={startCreateHighlight} loading={saving}>
+                  新增高光
+                </Button>
+              </div>
+            </div>
+            {draft ? (
+              <>
+                <div className={`highlight-edit-current ${draft.highlight_type}`}>
+                  <span>{editorMode === 'create' ? '正在新增' : '正在编辑'}：{selectedMeta?.label ?? '高光'}</span>
+                  <strong>{editorMode === 'edit' && selectedHighlight ? formatRange(selectedHighlight) : `${draft.start_time} - ${draft.end_time}`}</strong>
+                  <Tag color={highlightStatusMeta[draft.status]?.color}>{highlightStatusMeta[draft.status]?.label ?? draft.status}</Tag>
+                </div>
+                <div className="highlight-edit-grid">
+                  <label>
+                    <span className="highlight-field-title">
+                      <span>开始时间</span>
+                      <Button
+                        className="highlight-time-sync"
+                        icon={<AimOutlined />}
+                        size="small"
+                        type="text"
+                        onClick={() => syncDraftTime('start_time')}
+                      />
+                    </span>
+                    <Input value={draft.start_time} onChange={(event) => setDraft({ ...draft, start_time: event.target.value })} />
+                  </label>
+                  <label>
+                    <span className="highlight-field-title">
+                      <span>结束时间</span>
+                      <Button
+                        className="highlight-time-sync"
+                        icon={<AimOutlined />}
+                        size="small"
+                        type="text"
+                        onClick={() => syncDraftTime('end_time')}
+                      />
+                    </span>
+                    <Input value={draft.end_time} onChange={(event) => setDraft({ ...draft, end_time: event.target.value })} />
+                  </label>
+                  <label>
+                    <span>高光类型</span>
+                    <Select
+                      value={draft.highlight_type}
+                      options={Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }))}
+                      onChange={(value) => setDraft({ ...draft, highlight_type: value })}
+                    />
+                  </label>
+                  <label>
+                    <span>置信度</span>
+                    <InputNumber min={0} max={100} value={draft.confidence} addonAfter="%" disabled />
+                  </label>
+                  <label className="highlight-edit-reason">
+                    <span>识别依据</span>
+                    <Input.TextArea
+                      maxLength={200}
+                      rows={4}
+                      showCount
+                      value={draft.reason}
+                      onChange={(event) => setDraft({ ...draft, reason: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>审核状态</span>
+                    <Select
+                      value={draft.status}
+                      options={editableHighlightStatuses.map((value) => ({ value, label: highlightStatusMeta[value].label }))}
+                      onChange={(value) => setDraft({ ...draft, status: value })}
+                    />
+                  </label>
+                </div>
+              </>
+            ) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无高光可编辑" />
+            )}
+          </div>
+          </section>
+
+        <section className="upload-drama-card highlight-review-right">
+          <div className="highlight-list-title">
+            <h3>高光列表（共 {filteredHighlights.length} 条）</h3>
+            <div>
+              <Select
+                value={typeFilter}
+                onChange={setTypeFilter}
+                options={[{ value: 'all', label: '全部类型' }, ...Object.entries(highlightTypeMeta).map(([value, meta]) => ({ value, label: meta.label }))]}
+              />
+              <Select
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={[{ value: 'all', label: '全部状态' }, ...editableHighlightStatuses.map((value) => ({ value, label: highlightStatusMeta[value].label }))]}
+              />
+              <Input
+                className="highlight-review-search"
+                allowClear
+                suffix={<SearchOutlined />}
+                placeholder="搜索识别依据关键词"
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+              />
+            </div>
+          </div>
+          <Table
+            className="highlight-review-table"
+            rowKey="id"
+            loading={loading}
+            dataSource={filteredHighlights}
+            pagination={false}
+            onRow={(record) => ({ onClick: () => selectHighlight(record) })}
+            rowClassName={(record) => (record.id === selectedId ? 'active' : '')}
+            columns={[
+              { title: '时间范围', width: 130, render: (_, record) => formatRange(record) },
+              { title: '类型', width: 92, render: (_, record) => <Tag color={highlightTypeMeta[record.highlight_type]?.color}>{highlightTypeMeta[record.highlight_type]?.label ?? record.highlight_type}</Tag> },
+              { title: '识别依据', dataIndex: 'reason', ellipsis: true },
+              { title: '置信度', width: 88, render: (_, record) => `${Math.round(Number(record.confidence ?? 0) * 100)}%` },
+              { title: '状态', width: 96, render: (_, record) => <Tag color={highlightStatusMeta[record.status]?.color}>{highlightStatusMeta[record.status]?.label ?? record.status}</Tag> },
+              {
+                title: '操作',
+                width: 150,
+                render: (_, record) => (
+                  <div className="highlight-row-actions" onClick={(event) => event.stopPropagation()}>
+                    {record.status === 'draft' ? (
+                      <>
+                        <Button size="small" onClick={() => updateHighlightRecord(record, { status: 'published' })}>通过</Button>
+                        <Button size="small" onClick={() => selectHighlight(record)}>修改</Button>
+                        <Button size="small" danger onClick={() => updateHighlightRecord(record, { status: 'rejected' })}>拒绝</Button>
+                      </>
+                    ) : <span>-</span>}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </section>
+      </div>
+
+      <div className="upload-drama-footer highlight-review-footer">
+        <div className="highlight-review-stats">
+          <span>全部 <b>{stats.all}</b></span>
+          <span className="success">已通过 <b>{stats.published}</b></span>
+          <span className="error">已拒绝 <b>{stats.rejected}</b></span>
+          <span className="warning">待审核 <b>{stats.draft}</b></span>
+        </div>
+        <div>
+          <Button onClick={onClose}>取消</Button>
+          <Button loading={saving} disabled={!canCreateHighlight} onClick={saveEditor}>{editorMode === 'create' ? '创建高光' : '保存修改'}</Button>
+          <Button type="primary" loading={saving} onClick={submitReview}>提交审核结果</Button>
+        </div>
+      </div>
+      </div>
+    </Modal>
+  );
+}
+
+function highlightToDraft(highlight) {
+  return {
+    start_time: formatTimecode(highlight.start_time),
+    end_time: formatTimecode(highlight.end_time),
+    highlight_type: highlight.highlight_type,
+    confidence: Math.round(Number(highlight.confidence ?? 0) * 100),
+    reason: highlight.reason ?? '',
+    status: highlight.status,
+  };
 }
 
 function AnalyzeJobDetail({ jobId }) {

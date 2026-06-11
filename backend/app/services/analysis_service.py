@@ -6,6 +6,13 @@ from sqlalchemy.orm import Session
 from ..models import Episode, HighlightEvent
 from .highlight_service import create_highlight
 
+# ai_service 与 backend 同属仓库根目录，确保 import 路径可用
+_repo_root = str(Path(__file__).resolve().parents[3])
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+from ai_service.highlight_analyzer import analyze_subtitle_text  # noqa: E402
+
 
 def analyze_episode_highlights(db: Session, episode: Episode, force_reanalyze: bool = False) -> dict:
     if episode.analyze_status == "processing":
@@ -25,12 +32,19 @@ def analyze_episode_highlights(db: Session, episode: Episode, force_reanalyze: b
     db.commit()
 
     try:
-        repo_root = Path(__file__).resolve().parents[3]
-        if str(repo_root) not in sys.path:
-            sys.path.insert(0, str(repo_root))
-        from ai_service.highlight_analyzer import analyze_subtitle_text
+        from ai_service.subtitle_parser import parse_subtitle_text as _parse_srt
 
-        result = analyze_subtitle_text(episode.subtitle_content or episode.subtitle_url or "")
+        raw_content = episode.subtitle_content or ""
+        try:
+            cues = _parse_srt(raw_content)
+            subtitle_payload = "\n".join(
+                f"[{c.start_time:.2f}s - {c.end_time:.2f}s] {c.text}" for c in cues
+            )
+        except ValueError:
+            # 解析失败时直接把原始内容传给 LLM，保留 fallback 能力
+            subtitle_payload = raw_content
+
+        result = analyze_subtitle_text(subtitle_payload)
         if force_reanalyze:
             db.query(HighlightEvent).filter(HighlightEvent.episode_id == episode.id).delete()
 
@@ -49,8 +63,6 @@ def analyze_episode_highlights(db: Session, episode: Episode, force_reanalyze: b
         db.commit()
         return {
             "highlight_count": len(created),
-            "provider": result.get("provider", "unknown"),
-            "llm_error": result.get("llm_error", ""),
             "invalid_count": len(invalid_reasons),
         }
     except Exception as exc:

@@ -6,6 +6,7 @@ services:
     env_file:
       - .env
     volumes:
+      - ./backend/app:/app/backend/app
       - ./backend/uploads:/app/backend/uploads
       - ./backend/logs:/app/backend/logs
     depends_on:
@@ -27,6 +28,7 @@ services:
     env_file:
       - .env
     volumes:
+      - ./backend/app:/app/backend/app
       - ./backend/uploads:/app/backend/uploads
       - ./backend/logs:/app/backend/logs
     depends_on:

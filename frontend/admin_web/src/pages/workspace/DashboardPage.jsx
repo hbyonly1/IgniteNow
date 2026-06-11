@@ -142,35 +142,30 @@ export default function DashboardPage() {
       {
         label: '短剧总数',
         value: overview?.drama_count,
-        hint: '内容库已入库短剧',
         icon: <VideoCameraOutlined />,
         tone: 'blue',
       },
       {
         label: '剧集总数',
         value: overview?.episode_count,
-        hint: '可配置与分析剧集',
         icon: <PlayCircleOutlined />,
         tone: 'purple',
       },
       {
         label: '已发布高光',
         value: overview?.published_highlight_count,
-        hint: `全部高光 ${formatNumber(overview?.highlight_count)}`,
         icon: <BulbOutlined />,
         tone: 'green',
       },
       {
         label: '互动次数',
         value: overview?.interaction_count,
-        hint: `点击 ${formatNumber(overview?.click_count)} / 忽略 ${formatNumber(overview?.ignore_count)}`,
         icon: <LikeOutlined />,
         tone: 'orange',
       },
       {
         label: '平均点击率',
         value: formatPercent(overview?.avg_click_rate),
-        hint: 'click / impression',
         icon: <ThunderboltOutlined />,
         tone: 'red',
       },
@@ -245,7 +240,6 @@ export default function DashboardPage() {
               <div>
                 <p>{metric.label}</p>
                 <strong>{typeof metric.value === 'string' ? metric.value : formatNumber(metric.value)}</strong>
-                <em>{metric.hint}</em>
               </div>
             </article>
           ))}

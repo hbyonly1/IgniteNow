@@ -84,10 +84,10 @@ export default function HighlightsPage() {
     const publishedCount = publishItems.filter((item) => item.status === 'published').length;
     const failedCount = publishItems.filter((item) => item.status === 'failed').length;
     return [
-      { label: '待发布', value: waitCount, hint: '待完成最终检查', icon: <CalendarOutlined />, tone: 'blue' },
-      { label: '发布中', value: publishingCount, hint: '渠道同步进行中', icon: <CloudUploadOutlined />, tone: 'purple' },
-      { label: '已发布', value: publishedCount, hint: 'Android 可见内容', icon: <CheckCircleOutlined />, tone: 'green' },
-      { label: '异常回流', value: failedCount, hint: '需要人工处理', icon: <WarningOutlined />, tone: 'red' },
+      { label: '待发布', value: waitCount, icon: <CalendarOutlined />, tone: 'blue' },
+      { label: '发布中', value: publishingCount, icon: <CloudUploadOutlined />, tone: 'purple' },
+      { label: '已发布', value: publishedCount, icon: <CheckCircleOutlined />, tone: 'green' },
+      { label: '异常回流', value: failedCount, icon: <WarningOutlined />, tone: 'red' },
     ];
   }, [publishItems]);
 
@@ -193,6 +193,28 @@ export default function HighlightsPage() {
       },
     },
     {
+      title: '草稿高光',
+      dataIndex: 'draft_highlight_count',
+      width: 88,
+      align: 'center',
+      render: (value) => (
+        <span style={{ color: value > 0 ? '#fa8c16' : '#bbb', fontWeight: value > 0 ? 700 : 400 }}>
+          {value ?? 0}
+        </span>
+      ),
+    },
+    {
+      title: '已发布高光',
+      dataIndex: 'published_highlight_count',
+      width: 96,
+      align: 'center',
+      render: (value) => (
+        <span style={{ color: value > 0 ? '#52c41a' : '#bbb', fontWeight: value > 0 ? 700 : 400 }}>
+          {value ?? 0}
+        </span>
+      ),
+    },
+    {
       title: '最后更新时间',
       dataIndex: 'updated_at',
       width: 132,
@@ -217,40 +239,81 @@ export default function HighlightsPage() {
     },
   ];
 
+
   const recordColumns = [
     {
       title: '发布单号',
       dataIndex: 'id',
-      width: 120,
+      width: 100,
       render: (value) => `PUB-${value}`,
     },
     { title: '内容', dataIndex: 'content' },
     {
       title: '渠道',
       dataIndex: 'channel',
-      width: 150,
-      render: (value) => (value === 'android' ? 'Android 播放端' : value),
+      width: 120,
+      render: (value) => (value === 'android' ? 'Android' : value),
     },
     {
       title: '上线结果',
       dataIndex: 'status',
-      width: 120,
+      width: 100,
       render: (value) => {
         const meta = publishJobStatusMeta[value] ?? publishJobStatusMeta.pending;
         return <Tag className={`publish-record-tag ${meta.tone}`}>{meta.label}</Tag>;
       },
     },
     {
-      title: '数据回流',
-      key: 'flow',
-      width: 120,
-      render: (_, record) => (
-        <Tag className={`publish-record-tag ${record.click_rate > 0 ? 'success' : 'blue'}`}>
-          {record.impressions} 曝光 / {formatPercent(record.click_rate)}
-        </Tag>
+      title: '曝光',
+      dataIndex: 'impressions',
+      width: 70,
+      align: 'center',
+      render: (value) => <span style={{ fontWeight: 600 }}>{value ?? 0}</span>,
+    },
+    {
+      title: '点击',
+      dataIndex: 'clicks',
+      width: 70,
+      align: 'center',
+      render: (value) => <span style={{ fontWeight: 600, color: '#1677ff' }}>{value ?? 0}</span>,
+    },
+    {
+      title: '点击率',
+      dataIndex: 'click_rate',
+      width: 80,
+      align: 'center',
+      render: (value) => (
+        <span style={{ color: value > 0 ? '#52c41a' : '#bbb', fontWeight: 600 }}>
+          {formatPercent(value)}
+        </span>
       ),
     },
+    {
+      title: '操作',
+      key: 'record_actions',
+      width: 80,
+      align: 'center',
+      render: (_, record) =>
+        record.status === 'failed' ? (
+          <Button
+            size="small"
+            type="link"
+            onClick={async () => {
+              try {
+                await apiClient.post(`/api/publish/jobs/${record.id}/retry`);
+                message.success('重试已提交');
+                loadPublishCenter();
+              } catch (error) {
+                message.error(apiErrorMessage(error, '重试失败'));
+              }
+            }}
+          >
+            重试
+          </Button>
+        ) : null,
+    },
   ];
+
 
   return (
     <section className="publish-center-page">
@@ -268,7 +331,6 @@ export default function HighlightsPage() {
             <div>
               <p>{metric.label}</p>
               <strong>{metric.value}</strong>
-              <em>{metric.hint}</em>
             </div>
           </article>
         ))}

@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
@@ -14,10 +15,22 @@ class Drama(Base):
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     cover_url: Mapped[str] = mapped_column(String(500), default="")
+    wide_cover_url: Mapped[str] = mapped_column(String(500), default="")
+    categories_json: Mapped[str] = mapped_column(Text, default="[]")
+    cast_tags_json: Mapped[str] = mapped_column(Text, default="[]")
     status: Mapped[str] = mapped_column(String(32), default="active", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     episodes: Mapped[list["Episode"]] = relationship(back_populates="drama", cascade="all, delete-orphan")
+
+    @property
+    def categories(self) -> list[str]:
+        return _json_string_list(self.categories_json)
+
+    @property
+    def cast_tags(self) -> list[str]:
+        return _json_string_list(self.cast_tags_json)
 
 
 class UserAccount(Base):
@@ -39,12 +52,20 @@ class Episode(Base):
     episode_no: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(120), nullable=False)
     video_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    video_original_name: Mapped[str] = mapped_column(String(255), default="")
     subtitle_url: Mapped[str] = mapped_column(String(500), default="")
+    subtitle_original_name: Mapped[str] = mapped_column(String(255), default="")
     subtitle_content: Mapped[str] = mapped_column(Text, default="")
     duration: Mapped[float] = mapped_column(Float, default=0)
+    asset_status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
+    video_width: Mapped[int] = mapped_column(Integer, default=0)
+    video_height: Mapped[int] = mapped_column(Integer, default=0)
+    video_file_size: Mapped[int] = mapped_column(Integer, default=0)
+    video_mime_type: Mapped[str] = mapped_column(String(120), default="")
     analyze_status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     analyze_error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     drama: Mapped[Drama] = relationship(back_populates="episodes")
     owner: Mapped[Optional[UserAccount]] = relationship()
@@ -99,6 +120,8 @@ class UserInteractionLog(Base):
     action_value: Mapped[str] = mapped_column(String(120), default="")
     watch_time: Mapped[float] = mapped_column(Float, default=0)
     idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    # 每次进入播放页由移动端生成，同一会话的所有互动共享同一值；可为空（旧版客户端不上报）
+    play_session_id: Mapped[Optional[str]] = mapped_column(String(160), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     highlight: Mapped[HighlightEvent] = relationship(back_populates="logs")
@@ -191,3 +214,13 @@ class PublishJobItem(Base):
 
     publish_job: Mapped[PublishJob] = relationship(back_populates="items")
     episode: Mapped[Episode] = relationship(back_populates="publish_items")
+
+
+def _json_string_list(value: str) -> list[str]:
+    try:
+        parsed = json.loads(value or "[]")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if str(item).strip()]
