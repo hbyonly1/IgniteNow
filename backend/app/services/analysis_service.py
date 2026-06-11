@@ -15,8 +15,13 @@ if _repo_root not in sys.path:
 from ai_service.highlight_analyzer import analyze_subtitle_text  # noqa: E402
 
 
-def analyze_episode_highlights(db: Session, episode: Episode, force_reanalyze: bool = False) -> dict:
-    if episode.analyze_status == "processing":
+def analyze_episode_highlights(
+    db: Session,
+    episode: Episode,
+    force_reanalyze: bool = False,
+    allow_processing: bool = False,
+) -> dict:
+    if episode.analyze_status == "processing" and not allow_processing:
         raise ValueError("episode is already processing")
     if not (episode.subtitle_content or episode.subtitle_url):
         episode.analyze_status = "failed"

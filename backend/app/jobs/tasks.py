@@ -29,7 +29,21 @@ def run_ai_analyze_job(job_id: int) -> None:
             raise ValueError("episode not found")
 
         update_job_progress(db, job, 20, "episode loaded", {"episode_id": episode_id})
-        result = analyze_episode_highlights(db, episode, force_reanalyze)
+        if not (episode.subtitle_content or episode.subtitle_url):
+            update_job_progress(db, job, 35, "subtitle missing, subtitle ASR started", {"episode_id": episode_id})
+            try:
+                asr_result = transcribe_episode_subtitles(db, episode, force=False)
+            except Exception as exc:
+                episode.analyze_status = "failed"
+                episode.analyze_error = str(exc)
+                db.commit()
+                raise
+            db.refresh(episode)
+            update_job_progress(db, job, 65, "subtitle ASR completed", asr_result)
+        else:
+            update_job_progress(db, job, 35, "subtitle ready", {"episode_id": episode_id})
+
+        result = analyze_episode_highlights(db, episode, force_reanalyze, allow_processing=True)
         db.refresh(job)
         mark_job_success(db, job, "AI analysis job completed", result)
     except Exception as exc:

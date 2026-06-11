@@ -140,6 +140,8 @@ def create_job(payload: JobCreate, user=Depends(require_workspace_user), db: Ses
         raise HTTPException(status_code=404, detail="episode not found")
     if not _can_access_episode(user, episode):
         raise HTTPException(status_code=403, detail="episode is not owned by current uploader")
+    if payload.type == "ai_analyze" and episode.analyze_status == "processing":
+        raise HTTPException(status_code=400, detail="episode is already processing")
     if payload.type == "subtitle_asr" and not (episode.video_url or "").strip():
         raise HTTPException(status_code=400, detail="episode.video_url is required")
     try:
@@ -150,6 +152,11 @@ def create_job(payload: JobCreate, user=Depends(require_workspace_user), db: Ses
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"failed to enqueue job: {exc}") from exc
+    if payload.type == "ai_analyze":
+        episode.analyze_status = "processing"
+        episode.analyze_error = ""
+        db.commit()
+        db.refresh(job)
     return ok(_job_out(job), "job queued")
 
 

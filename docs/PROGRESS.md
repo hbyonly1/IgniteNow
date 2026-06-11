@@ -40,6 +40,8 @@
 - 修复发布任务失败状态处理：发布中心现在会读取发布单返回的 `status`、`failed_count`、`error` 和失败条目错误并直接提示业务失败原因；后端发布执行改为先校验高光时间段重叠，再把 `draft` 高光改为 `published`，避免失败发布单污染高光状态。
 - 修复本地字幕识别模型缓存权限问题：Docker app/worker 显式设置 `HOME=/app`、`XDG_CACHE_HOME`、`HF_HOME` 和 `WHISPER_DOWNLOAD_ROOT` 到可写的 `backend/model_cache`，并让 `WhisperModel` 使用配置化下载目录，避免 faster-whisper 在 `HOME=/nonexistent` 环境下报权限错误。
 - 将本地字幕识别默认模型从 `small` 调整为最小的 `tiny`，优先降低首次模型下载体积和 CPU 识别耗时；需要更高准确率时仍可通过 `WHISPER_MODEL` 环境变量改回 `small` 或更大模型。
+- AI 分析任务升级为完整流水线：创建 `ai_analyze` 成功入队后立即把剧集状态置为 `processing`；worker 执行时如果缺字幕，会先调用本地字幕识别写回 SRT，再继续 LLM 高光识别，失败原因同步写入 `job.error` 与 `episode.analyze_error`。
+- AI 分析页批量分析、批量重试、一键分析全剧改为逐项提交并收集结果；前端失败提示直接弹出后端返回的原始错误，不再包装成“批量提交失败”等泛化文案，失败状态标签悬停可查看 `analyze_error` / `latest_job.error`。
 
 ### 已验证
 - `python -m pytest tests/test_subtitle_asr.py tests/test_jobs.py --basetemp .codex-pytest-tmp` 覆盖字幕识别服务写回 SRT、已有字幕跳过和 `subtitle_asr` 任务创建。
@@ -53,6 +55,7 @@
 - `LOG_DIR=backend/logs .venv312/bin/python -m pytest tests/test_subtitle_asr.py tests/test_jobs.py --basetemp .codex-pytest-tmp-asr` 通过，覆盖字幕识别任务创建、已有字幕跳过、SRT 写回和 Whisper 模型下载目录传参。
 - `docker compose config` 通过，确认 app 与 worker 均注入可写模型缓存环境变量并挂载 `backend/model_cache`。
 - `PYTHONPYCACHEPREFIX=/private/tmp/ignitenow_pycache .venv312/bin/python -m compileall backend/app` 通过。
+- `LOG_DIR=backend/logs .venv312/bin/python -m pytest tests/test_analysis.py tests/test_jobs.py tests/test_analysis_queue.py --basetemp .codex-pytest-tmp-analysis-pipeline` 通过，覆盖任务入队置为分析中、缺字幕自动 ASR 后继续高光识别、失败原因写回和分析列表聚合。
 
 ## 2026-06-11 内容管理批量上传功能
 

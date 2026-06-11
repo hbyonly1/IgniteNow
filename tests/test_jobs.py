@@ -53,6 +53,9 @@ def test_create_ai_analyze_job_records_status(
     assert data["type"] == "ai_analyze"
     assert data["status"] == "pending"
     assert data["rq_job_id"] == "rq-test"
+    db_session.refresh(demo_episode)
+    assert demo_episode.analyze_status == "processing"
+    assert demo_episode.analyze_error == ""
 
 
 def test_create_subtitle_asr_job_records_status(

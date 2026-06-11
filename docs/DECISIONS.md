@@ -11,6 +11,7 @@
 - 移动端内容上传链路确定删除，包括 `POST /api/uploads/episodes`、上传页面和入口；Android 只保留播放端 API 与互动回传 API。
 - `verify_demo_chain` 从系统任务枚举删除，同名脚本继续作为命令行交付验收工具；`ocr_import` 暂保留为未实现的预留任务类型，不在 UI 暴露。
 - AI 分析触发统一收口到异步任务：删除同步 `POST /api/episodes/{episode_id}/analyze`，管理后台和 uploader 只能通过 `POST /api/system/jobs` 创建 `ai_analyze` 任务，worker 负责实际分析、失败落库和任务日志。
+- `ai_analyze` 任务作为完整分析流水线入口：任务成功入队后立即把剧集置为 `processing`；worker 若发现缺少字幕，会先复用本地 `subtitle_asr` 识别并写回字幕，再继续 LLM 高光识别。单独的 `subtitle_asr` 入口保留给人工提前识别、查看结果或强制覆盖字幕。
 - 2026-06-11 已落地 `GET /api/analysis/queue`，管理后台 AI 分析列表与详情页统一使用该聚合接口；任务创建、重跑、日志查看继续复用 `/api/system/jobs`。
 
 ## 2026-05-30 内容管理合并与剧集归属

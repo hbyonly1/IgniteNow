@@ -14,6 +14,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   message,
 } from 'antd';
 import {
@@ -64,6 +65,19 @@ const highlightStatusMeta = {
 };
 
 const editableHighlightStatuses = ['draft', 'published', 'rejected'];
+
+function notifyApiError(error) {
+  message.error(apiErrorMessage(error));
+}
+
+function settledErrorMessage(results) {
+  const errors = results
+    .filter((result) => result.status === 'rejected')
+    .map((result) => apiErrorMessage(result.reason))
+    .filter(Boolean);
+  return Array.from(new Set(errors)).join('；');
+}
+
 function emotionForHighlightType(type) {
   return highlightTypeMeta[type]?.label ?? highlightTypeMeta.satisfying.label;
 }
@@ -342,7 +356,7 @@ function AnalyzeQueue() {
       await loadData();
       navigate(`/workspace/analyze/jobs/${response.data.data.id}`);
     } catch (error) {
-      message.error(apiErrorMessage(error, '提交分析失败'));
+      notifyApiError(error);
     } finally {
       setSubmitting(false);
     }
@@ -361,7 +375,7 @@ function AnalyzeQueue() {
     }
     setLoading(true);
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         episodes.map((episode) =>
           apiClient.post('/api/system/jobs', {
             type: 'ai_analyze',
@@ -369,11 +383,18 @@ function AnalyzeQueue() {
           }),
         ),
       );
-      message.success(`已批量重试 ${episodes.length} 个任务`);
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      if (successCount) {
+        message.success(`已批量重试 ${successCount} 个任务`);
+      }
+      const errorMessage = settledErrorMessage(results);
+      if (errorMessage) {
+        message.error(errorMessage);
+      }
       setSelectedRowKeys([]);
       await loadData();
     } catch (error) {
-      message.error(apiErrorMessage(error, '批量重试失败'));
+      notifyApiError(error);
     } finally {
       setLoading(false);
     }
@@ -392,7 +413,7 @@ function AnalyzeQueue() {
     }
     setLoading(true);
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         episodes.map((episode) =>
           apiClient.post('/api/system/jobs', {
             type: 'ai_analyze',
@@ -400,11 +421,18 @@ function AnalyzeQueue() {
           }),
         ),
       );
-      message.success(`已批量提交 ${episodes.length} 个分析任务`);
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      if (successCount) {
+        message.success(`已批量提交 ${successCount} 个分析任务`);
+      }
+      const errorMessage = settledErrorMessage(results);
+      if (errorMessage) {
+        message.error(errorMessage);
+      }
       setSelectedRowKeys([]);
       await loadData();
     } catch (error) {
-      message.error(apiErrorMessage(error, '批量提交失败'));
+      notifyApiError(error);
     } finally {
       setLoading(false);
     }
@@ -418,7 +446,7 @@ function AnalyzeQueue() {
     }
     setLoading(true);
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         episodes.map((episode) =>
           apiClient.post('/api/system/jobs', {
             type: 'ai_analyze',
@@ -426,10 +454,17 @@ function AnalyzeQueue() {
           }),
         ),
       );
-      message.success(`已提交 ${episodes.length} 集分析任务`);
+      const successCount = results.filter((result) => result.status === 'fulfilled').length;
+      if (successCount) {
+        message.success(`已提交 ${successCount} 集分析任务`);
+      }
+      const errorMessage = settledErrorMessage(results);
+      if (errorMessage) {
+        message.error(errorMessage);
+      }
       await loadData();
     } catch (error) {
-      message.error(apiErrorMessage(error, '全剧提交失败'));
+      notifyApiError(error);
     } finally {
       setLoading(false);
     }
@@ -453,7 +488,7 @@ function AnalyzeQueue() {
       message.success('已提交重新分析任务');
       await loadData();
     } catch (error) {
-      message.error(apiErrorMessage(error, '重新分析失败'));
+      notifyApiError(error);
     } finally {
       setLoading(false);
     }
@@ -514,7 +549,11 @@ function AnalyzeQueue() {
           return `${record.finished_episodes} / ${record.total_episodes} 集`;
         } else {
           const meta = stageMeta[record.analyze_status] ?? stageMeta.pending;
-          return <Tag className="analysis-stage-tag" color={meta.color}>{meta.label}</Tag>;
+          const failureReason = record.analyze_error || record.latest_job?.error;
+          const tag = <Tag className="analysis-stage-tag" color={meta.color}>{meta.label}</Tag>;
+          return record.analyze_status === 'failed' && failureReason ? (
+            <Tooltip title={failureReason}>{tag}</Tooltip>
+          ) : tag;
         }
       },
     },
@@ -892,7 +931,7 @@ function SubtitleAsrModal({ episode, open, onClose, onUpdated }) {
       await loadDetail();
       await onUpdated?.();
     } catch (error) {
-      message.error(apiErrorMessage(error, '字幕识别任务提交失败'));
+      notifyApiError(error);
     } finally {
       setSubmitting(false);
     }
